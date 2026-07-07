@@ -20,6 +20,58 @@ services:
       - spider-output:/app/server/output
     environment:
       PYTHONUNBUFFERED: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+    shm_size: "2gb"
+    restart: unless-stopped
+
+  spider-webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+    container_name: spider-webui
+    depends_on:
+      - spider-master
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  spider-slaver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - python
+      - -m
+      - src.slaver
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8101"
+      - --master-url
+      - http://spider-master:8000
+      - --env-name
+      - docker-slaver-node
+      - --max-workers
+      - "4"
+    depends_on:
+      - spider-master
+    environment:
+      PYTHONUNBUFFERED: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2G
+        reservations:
+          cpus: "0.50"
+          memory: 512M
     shm_size: "2gb"
     restart: unless-stopped
 

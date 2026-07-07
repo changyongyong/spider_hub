@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import socket
 import uuid
@@ -6,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
@@ -20,10 +22,28 @@ class FetchRequest(BaseModel):
     include_links: bool = True
 
 
+class BrowserEnvironmentRequest(BaseModel):
+    worker_id: str | None = None
+    env_name: str | None = None
+    proxy: dict[str, str] | None = None
+    headful: bool = False
+    browser_channel: str | None = None
+    challenge_wait: float = Field(default=0, ge=0)
+    launch_args: list[str] = Field(default_factory=list)
+    user_agent: str | None = None
+    locale: str = "pl-PL"
+    timezone_id: str | None = None
+    viewport_width: int = Field(default=1365, ge=320)
+    viewport_height: int = Field(default=768, ge=240)
+    block_images: bool = False
+    block_media: bool = False
+    cookies: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class SlaverRuntime:
     def __init__(
         self,
-        worker_id: str,
+        node_id: str,
         env_name: str | None = None,
         proxy: dict[str, str] | None = None,
         headful: bool = False,
@@ -38,8 +58,13 @@ class SlaverRuntime:
         block_images: bool = False,
         block_media: bool = False,
         cookies: list[dict[str, Any]] | None = None,
+        master_url: str | None = None,
+        public_url: str | None = None,
+        port: int = 8101,
+        max_workers: int = 4,
+        create_initial_worker: bool = False,
     ) -> None:
-        self.worker_id = worker_id
+        self.node_id = node_id
         self.env_name = env_name
         self.proxy = proxy
         self.headful = headful
@@ -54,52 +79,96 @@ class SlaverRuntime:
         self.block_images = block_images
         self.block_media = block_media
         self.cookies = cookies or []
+        self.master_url = master_url.rstrip("/") if master_url else None
+        self.public_url = public_url.rstrip("/") if public_url else None
+        self.port = port
+        self.max_workers = max_workers
+        self.create_initial_worker = create_initial_worker
         self.playwright_manager = None
         self.playwright = None
-        self.worker: TaskWorker | None = None
+        self.workers: dict[str, TaskWorker] = {}
 
     async def start(self) -> None:
-        if self.worker:
+        if self.playwright:
             return
 
         self.playwright_manager = async_playwright()
         self.playwright = await self.playwright_manager.start()
+        if self.create_initial_worker:
+            await self.create_environment(
+                BrowserEnvironmentRequest(
+                    worker_id=self.node_id,
+                    env_name=self.env_name,
+                    proxy=self.proxy,
+                    headful=self.headful,
+                    browser_channel=self.browser_channel,
+                    challenge_wait=self.challenge_wait,
+                    launch_args=self.launch_args,
+                    user_agent=self.user_agent,
+                    locale=self.locale,
+                    timezone_id=self.timezone_id,
+                    viewport_width=self.viewport_width,
+                    viewport_height=self.viewport_height,
+                    block_images=self.block_images,
+                    block_media=self.block_media,
+                    cookies=self.cookies,
+                )
+            )
+
+    async def create_environment(self, request: BrowserEnvironmentRequest) -> dict[str, Any]:
+        if len(self.workers) >= self.max_workers:
+            raise RuntimeError("slaver node capacity reached")
+        if not self.playwright:
+            await self.start()
+        if not self.playwright:
+            raise RuntimeError("playwright is not running")
+
+        worker_id = request.worker_id or f"env-{uuid.uuid4().hex[:8]}"
         config = WorkerConfig(
-            worker_id=self.worker_id,
-            proxy=self.proxy,
-            env_name=self.env_name,
-            headful=self.headful,
-            browser_channel=self.browser_channel,
-            challenge_wait=self.challenge_wait,
-            launch_args=self.launch_args,
-            user_agent=self.user_agent,
-            locale=self.locale,
-            timezone_id=self.timezone_id,
-            viewport_width=self.viewport_width,
-            viewport_height=self.viewport_height,
-            block_images=self.block_images,
-            block_media=self.block_media,
-            cookies=self.cookies,
+            worker_id=worker_id,
+            proxy=request.proxy,
+            env_name=request.env_name,
+            headful=request.headful,
+            browser_channel=request.browser_channel,
+            challenge_wait=request.challenge_wait,
+            launch_args=request.launch_args,
+            user_agent=request.user_agent,
+            locale=request.locale,
+            timezone_id=request.timezone_id,
+            viewport_width=request.viewport_width,
+            viewport_height=request.viewport_height,
+            block_images=request.block_images,
+            block_media=request.block_media,
+            cookies=request.cookies,
         )
-        self.worker = TaskWorker(self.playwright, config)
-        await self.worker.start()
+        worker = TaskWorker(self.playwright, config)
+        await worker.start()
+        self.workers[worker_id] = worker
+        return worker.info()
 
     async def stop(self) -> None:
-        if self.worker:
-            await self.worker.stop()
-            self.worker = None
+        for worker in list(self.workers.values()):
+            await worker.stop()
+        self.workers.clear()
         if self.playwright_manager:
             await self.playwright_manager.stop()
             self.playwright_manager = None
             self.playwright = None
 
-    async def fetch(self, request: FetchRequest) -> dict[str, Any]:
-        if not self.worker:
-            await self.start()
-        if not self.worker:
-            raise RuntimeError("slaver worker is not running")
+    async def stop_environment(self, worker_id: str) -> dict[str, Any]:
+        worker = self.workers.pop(worker_id)
+        await worker.stop()
+        return {"worker_id": worker_id, "stopped": True}
 
-        result = await self.worker.fetch(
+    async def fetch(self, request: FetchRequest, worker_id: str | None = None) -> dict[str, Any]:
+        if worker_id:
+            worker = self.workers[worker_id]
+        else:
+            if not self.workers:
+                raise RuntimeError("no browser environments on this slaver node")
+            worker = next(iter(self.workers.values()))
+
+        result = await worker.fetch(
             url=request.url,
             wait_seconds=request.wait_seconds,
             include_html=request.include_html,
@@ -109,18 +178,15 @@ class SlaverRuntime:
         return result
 
     def status(self) -> dict[str, Any]:
-        if not self.worker:
-            return {
-                "worker_id": self.worker_id,
-                "env_name": self.env_name,
-                "running": False,
-                "headful": self.headful,
-                "browser_channel": self.browser_channel,
-                "challenge_wait": self.challenge_wait,
-                "config": self.config_public(),
-                "stats": {},
-            }
-        return self.worker.info()
+        workers = [worker.info() for worker in self.workers.values()]
+        return {
+            "node_id": self.node_id,
+            "running": self.playwright is not None,
+            "max_workers": self.max_workers,
+            "worker_count": len(self.workers),
+            "available_slots": max(0, self.max_workers - len(self.workers)),
+            "workers": workers,
+        }
 
     def config_public(self) -> dict[str, Any]:
         return {
@@ -140,14 +206,37 @@ class SlaverRuntime:
             "cookies_count": len(self.cookies),
         }
 
+    async def register_with_master(self) -> None:
+        if not self.master_url:
+            return
+
+        payload = {
+            "port": self.port,
+            "worker_id": self.node_id,
+            "base_url": self.public_url,
+        }
+        for _ in range(30):
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.post(
+                        f"{self.master_url}/slavers/register-self",
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                return
+            except Exception:
+                await asyncio.sleep(1)
+
 
 def create_app(runtime: SlaverRuntime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await app.state.runtime.start()
+        register_task = asyncio.create_task(app.state.runtime.register_with_master())
         try:
             yield
         finally:
+            register_task.cancel()
             await app.state.runtime.stop()
 
     app = FastAPI(title="Playwright Slaver Task", version="1.0.0", lifespan=lifespan)
@@ -168,6 +257,33 @@ def create_app(runtime: SlaverRuntime) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.get("/environments")
+    async def list_environments() -> list[dict[str, Any]]:
+        return [worker.info() for worker in app.state.runtime.workers.values()]
+
+    @app.post("/environments")
+    async def create_environment(request: BrowserEnvironmentRequest) -> dict[str, Any]:
+        try:
+            return await app.state.runtime.create_environment(request)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/environments/{worker_id}/fetch")
+    async def fetch_environment(worker_id: str, request: FetchRequest) -> dict[str, Any]:
+        try:
+            return await app.state.runtime.fetch(request, worker_id=worker_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.delete("/environments/{worker_id}")
+    async def delete_environment(worker_id: str) -> dict[str, Any]:
+        try:
+            return await app.state.runtime.stop_environment(worker_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+
     return app
 
 
@@ -179,6 +295,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--headful", action="store_true", help="show browser window")
     parser.add_argument("--browser-channel", choices=("chrome", "msedge"))
     parser.add_argument("--challenge-wait", type=float, default=0)
+    parser.add_argument("--env-name")
+    parser.add_argument("--master-url")
+    parser.add_argument("--public-url")
+    parser.add_argument("--max-workers", type=int, default=4)
+    parser.add_argument("--create-initial-worker", action="store_true")
     parser.add_argument("--config-json", help="full slaver environment config as JSON")
     return parser.parse_args()
 
@@ -192,8 +313,8 @@ def main() -> None:
     args = parse_args()
     config = json.loads(args.config_json) if args.config_json else {}
     runtime = SlaverRuntime(
-        worker_id=config.get("worker_id") or args.worker_id or default_worker_id(args.port),
-        env_name=config.get("env_name"),
+        node_id=config.get("node_id") or args.worker_id or default_worker_id(args.port),
+        env_name=config.get("env_name") or args.env_name,
         proxy=config.get("proxy"),
         headful=config.get("headful", args.headful),
         browser_channel=config.get("browser_channel", args.browser_channel),
@@ -207,6 +328,11 @@ def main() -> None:
         block_images=bool(config.get("block_images")),
         block_media=bool(config.get("block_media")),
         cookies=config.get("cookies") or [],
+        master_url=config.get("master_url") or args.master_url,
+        public_url=config.get("public_url") or args.public_url,
+        port=args.port,
+        max_workers=config.get("max_workers") or args.max_workers,
+        create_initial_worker=bool(config.get("create_initial_worker", args.create_initial_worker)),
     )
     app = create_app(runtime)
     uvicorn.run(app, host=args.host, port=args.port)

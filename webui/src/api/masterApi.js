@@ -12,11 +12,15 @@ export function refreshSlavers() {
   return request("/slavers?refresh=true");
 }
 
+export function listSlavers() {
+  return request("/slavers");
+}
+
 export function registerSlaver(payload) {
   return request("/slavers", jsonOptions("POST", payload));
 }
 
-export function startSlaver(payload) {
+export function createBrowserEnvironment(payload) {
   return request("/slavers/start", jsonOptions("POST", payload));
 }
 

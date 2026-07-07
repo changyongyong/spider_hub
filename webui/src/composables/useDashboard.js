@@ -3,10 +3,11 @@ import {
   deleteWorker,
   getHealth,
   listJobs,
+  listSlavers,
   listWorkers,
   refreshSlavers,
   registerSlaver,
-  startSlaver,
+  createBrowserEnvironment,
   submitJob
 } from "../api/masterApi";
 import { countByStatus } from "../domain/dashboard";
@@ -14,6 +15,7 @@ import { countByStatus } from "../domain/dashboard";
 export function useDashboard() {
   const health = ref({ ok: false, workers: 0 });
   const workers = ref([]);
+  const slavers = ref([]);
   const jobs = ref([]);
   const latestResult = ref({});
   const loading = ref(false);
@@ -33,13 +35,17 @@ export function useDashboard() {
     error.value = "";
 
     try {
-      const [nextHealth, nextWorkers, nextJobs] = await Promise.all([
+      const slaversPromise = refreshRemote ? refreshSlavers() : listSlavers();
+      const workersPromise = refreshRemote ? slaversPromise.then(() => listWorkers()) : listWorkers();
+      const [nextHealth, nextWorkers, nextJobs, nextSlavers] = await Promise.all([
         getHealth(),
-        refreshRemote ? refreshSlavers().then(() => listWorkers()) : listWorkers(),
-        listJobs()
+        workersPromise,
+        listJobs(),
+        slaversPromise
       ]);
       health.value = nextHealth;
       workers.value = nextWorkers;
+      slavers.value = nextSlavers;
       jobs.value = nextJobs;
       lastUpdatedAt.value = new Date();
     } catch (caught) {
@@ -50,7 +56,7 @@ export function useDashboard() {
   }
 
   async function createManagedSlaver(payload) {
-    return runAction("正在启动 slaver...", () => startSlaver(payload), true);
+    return runAction("正在创建 Playwright 环境...", () => createBrowserEnvironment(payload), true);
   }
 
   async function attachSlaver(payload) {
@@ -100,6 +106,7 @@ export function useDashboard() {
   return {
     health,
     workers,
+    slavers,
     remoteWorkers,
     jobs,
     jobCounts,

@@ -10,10 +10,15 @@ master
   保存内存中的任务状态和结果
 
 slaver task
-  一个独立的 Playwright 浏览器进程
-  使用环境中配置的浏览器参数和代理
+  一个 Playwright 浏览器环境
+  由某个 slaver node 承载
   抓取页面源码、链接、标题、状态码等
   通过 HTTP 返回给 master
+
+slaver node
+  一个采集节点，可以是一个容器或一台机器
+  一个 node 内可以创建多个 Playwright 浏览器环境
+  node 负责真正启动和持有浏览器
 ```
 
 ## 1. 安装依赖
@@ -84,13 +89,16 @@ docker compose up -d --build
 访问：
 
 ```text
-http://127.0.0.1:8000/
+WebUI: http://127.0.0.1:8080/
+API:   http://127.0.0.1:8000/docs
 ```
 
 查看日志：
 
 ```powershell
 docker compose logs -f spider-master
+docker compose logs -f spider-webui
+docker compose logs -f spider-slaver
 ```
 
 停止：
@@ -99,14 +107,39 @@ docker compose logs -f spider-master
 docker compose down
 ```
 
-Compose 默认只启动 `spider-master`。后续在 WebUI 点击 `新建环境` 时，master 会在容器内启动 slaver task 子进程并自动注册。
+Compose 会启动三个服务：
+
+```text
+spider-master  后端 master/API，端口 8000，轻量调度端
+spider-webui   前端 Vue/Nginx，端口 8080
+spider-slaver  Playwright 采集节点，默认不暴露宿主机端口，单节点可承载多个浏览器，可横向扩容
+```
+
+`spider-slaver` 启动后会自动向 `spider-master` 注册。当前 compose 里每个 slaver node 默认 `--max-workers 4`，也就是单个 slaver 容器最多创建 4 个 Playwright 浏览器环境。
+
+新建 Playwright 环境时需要在 WebUI 里手动选择目标 slaver node，master 不会自动分配。这样可以按节点资源、代理段、机房或业务用途来控制环境落点。
+
+需要更多采集容量时有两种方式：
+
+```text
+增加单节点容量：调大 spider-slaver 的 --max-workers 和资源限制
+增加节点数量：横向扩 spider-slaver 容器副本
+```
+
+横向扩容示例：
+
+```powershell
+docker compose up -d --build --scale spider-slaver=4
+```
+
+master 和 WebUI 通常资源占用较小；slaver 会启动浏览器，建议把 CPU、内存和 `shm_size` 主要分给 slaver。`docker-compose.yml` 里已经给 master 和 slaver 分开写了基础资源限制，可按机器配置调整。
 
 ## 5. 通过 WebUI 添加 Slaver Task
 
 打开：
 
 ```text
-http://127.0.0.1:8000/
+http://127.0.0.1:8080/
 ```
 
 点击 `新建环境`，可以配置：
@@ -126,12 +159,12 @@ http://127.0.0.1:8101
 
 ## 6. 通过 HTTP API 添加 Slaver Task
 
-让 master 在本机启动一个托管 slaver：
+在指定 slaver node 上创建一个 Playwright 环境：
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/slavers/start ^
   -H "Content-Type: application/json" ^
-  -d "{\"env_name\":\"crawler-1\",\"port\":8101,\"headful\":true,\"browser_channel\":\"chrome\",\"challenge_wait\":5}"
+  -d "{\"node_id\":\"NODE_ID\",\"env_name\":\"crawler-1\",\"headful\":true,\"browser_channel\":\"chrome\",\"challenge_wait\":5}"
 ```
 
 带代理和启动参数：
@@ -139,7 +172,7 @@ curl -X POST http://127.0.0.1:8000/slavers/start ^
 ```powershell
 curl -X POST http://127.0.0.1:8000/slavers/start ^
   -H "Content-Type: application/json" ^
-  -d "{\"env_name\":\"crawler-1\",\"port\":8101,\"headful\":true,\"browser_channel\":\"chrome\",\"challenge_wait\":5,\"proxy\":{\"enabled\":true,\"scheme\":\"http\",\"host\":\"127.0.0.1\",\"port\":8080,\"username\":\"user\",\"password\":\"pass\"},\"launch_args\":[\"--disable-notifications\"],\"locale\":\"en-US\",\"timezone_id\":\"UTC\",\"viewport_width\":1365,\"viewport_height\":768,\"block_images\":false,\"block_media\":false}"
+  -d "{\"node_id\":\"NODE_ID\",\"env_name\":\"crawler-1\",\"headful\":true,\"browser_channel\":\"chrome\",\"challenge_wait\":5,\"proxy\":{\"enabled\":true,\"scheme\":\"http\",\"host\":\"127.0.0.1\",\"port\":3128,\"username\":\"user\",\"password\":\"pass\"},\"launch_args\":[\"--disable-notifications\"],\"locale\":\"en-US\",\"timezone_id\":\"UTC\",\"viewport_width\":1365,\"viewport_height\":768,\"block_images\":false,\"block_media\":false}"
 ```
 
 查看 slaver：

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -26,6 +26,12 @@ class RegisterSlaverRequest(BaseModel):
     worker_id: str | None = None
 
 
+class SelfRegisterSlaverRequest(BaseModel):
+    port: int = Field(ge=1, le=65535)
+    worker_id: str | None = None
+    base_url: str | None = None
+
+
 class UpdateSlaverRequest(BaseModel):
     base_url: str | None = None
 
@@ -40,6 +46,7 @@ class ProxyConfigRequest(BaseModel):
 
 
 class StartSlaverRequest(BaseModel):
+    node_id: str | None = None
     host: str = "127.0.0.1"
     port: int | None = Field(default=None, ge=1, le=65535)
     env_name: str | None = None
@@ -139,7 +146,7 @@ def create_app(master: Master) -> FastAPI:
     async def list_slavers(refresh: bool = False) -> list[dict[str, Any]]:
         if refresh:
             return await app.state.master.refresh_slavers()
-        return [worker for worker in app.state.master.list_workers() if worker["kind"] == "remote"]
+        return app.state.master.list_slavers()
 
     @app.post("/slavers")
     async def register_slaver(request: RegisterSlaverRequest) -> dict[str, Any]:
@@ -151,10 +158,31 @@ def create_app(master: Master) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/slavers/register-self")
+    async def register_self(
+        request: Request,
+        body: SelfRegisterSlaverRequest,
+    ) -> dict[str, Any]:
+        client_host = request.client.host if request.client else None
+        base_url = body.base_url
+        if not base_url:
+            if not client_host:
+                raise HTTPException(status_code=400, detail="missing client host")
+            base_url = f"http://{client_host}:{body.port}"
+
+        try:
+            return await app.state.master.register_slaver(
+                base_url=base_url,
+                worker_id=body.worker_id,
+            )
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.post("/slavers/start")
     async def start_slaver(request: StartSlaverRequest) -> dict[str, Any]:
         try:
-            return await app.state.master.start_managed_slaver(
+            return await app.state.master.create_browser_environment(
+                node_id=request.node_id,
                 host=request.host,
                 port=request.port,
                 headful=request.headful,
@@ -180,7 +208,7 @@ def create_app(master: Master) -> FastAPI:
     @app.delete("/slavers/{worker_id}")
     async def delete_slaver(worker_id: str) -> dict[str, Any]:
         try:
-            return await app.state.master.stop_worker(worker_id)
+            return await app.state.master.stop_slaver_node(worker_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail="slaver not found") from error
 

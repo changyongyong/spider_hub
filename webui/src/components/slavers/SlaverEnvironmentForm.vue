@@ -3,6 +3,13 @@ import { computed, reactive, ref } from "vue";
 import { ArrowLeft, ChevronDown, Monitor, Smartphone } from "lucide-vue-next";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 
+const props = defineProps({
+  nodes: {
+    type: Array,
+    default: () => []
+  }
+});
+
 const emit = defineEmits(["cancel", "submit"]);
 
 const sections = [
@@ -14,10 +21,9 @@ const sections = [
 
 const activeSection = ref("basic");
 const form = reactive({
+  node_id: "",
   env_name: "新建环境",
   count: 1,
-  host: "127.0.0.1",
-  port: "",
   browser_channel: "chrome",
   headful: true,
   challenge_wait: 5,
@@ -125,9 +131,8 @@ function launchArgs() {
 
 function payload() {
   return {
+    node_id: form.node_id,
     env_name: form.env_name,
-    host: form.host,
-    port: form.port ? Number(form.port) : undefined,
     browser_channel: form.browser_channel || undefined,
     headful: form.headful,
     challenge_wait: Number(form.challenge_wait),
@@ -149,6 +154,12 @@ function payload() {
 
 function submit() {
   emit("submit", payload());
+}
+
+function nodeLabel(node) {
+  const slots = node.available_slots ?? "-";
+  const total = node.max_workers ?? "-";
+  return `${node.node_id} (${node.base_url}, ${slots}/${total} 可用)`;
 }
 </script>
 
@@ -198,17 +209,26 @@ function submit() {
               环境名称 *
               <input v-model.trim="form.env_name" class="input max-w-4xl" required>
             </label>
-            <div class="grid max-w-4xl gap-4 md:grid-cols-4">
+            <label class="label max-w-4xl">
+              Slaver 节点 *
+              <select v-model="form.node_id" class="input" required>
+                <option value="" disabled>请选择承载该 Playwright 环境的 slaver 节点</option>
+                <option
+                  v-for="node in props.nodes"
+                  :key="node.node_id"
+                  :value="node.node_id"
+                  :disabled="node.available_slots === 0"
+                >
+                  {{ nodeLabel(node) }}
+                </option>
+              </select>
+            </label>
+            <div v-if="props.nodes.length === 0" class="max-w-4xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              当前没有可用 slaver 节点。请先启动或注册 slaver 节点，再创建 Playwright 环境。
+            </div>
+            <div class="grid max-w-4xl gap-4 md:grid-cols-2">
               <label class="label">
-                启动 Host
-                <input v-model.trim="form.host" class="input">
-              </label>
-              <label class="label">
-                指定端口
-                <input v-model="form.port" class="input" type="number" placeholder="自动">
-              </label>
-              <label class="label">
-                等待秒数
+                页面额外等待秒数
                 <input v-model="form.challenge_wait" class="input" type="number" min="0">
               </label>
               <label class="label">
@@ -353,7 +373,7 @@ function submit() {
           </section>
 
           <footer class="fixed bottom-0 left-0 right-0 flex h-14 items-center gap-2 border-t border-line bg-white px-5">
-            <button class="btn min-w-24" type="submit">完成</button>
+            <button class="btn min-w-24" type="submit" :disabled="!form.node_id">完成</button>
             <button class="btn btn-secondary min-w-20" type="button" @click="emit('cancel')">取消</button>
           </footer>
         </form>

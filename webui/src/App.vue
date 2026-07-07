@@ -21,6 +21,11 @@ async function createEnvironment(payload) {
   mode.value = "list";
 }
 
+async function openCreateEnvironment() {
+  await dashboard.refresh({ refreshRemote: true, silent: true });
+  mode.value = "create";
+}
+
 async function registerExisting() {
   if (!registerUrl.value.trim()) return;
   await dashboard.attachSlaver({ base_url: registerUrl.value.trim() });
@@ -31,6 +36,7 @@ async function registerExisting() {
 <template>
   <SlaverEnvironmentForm
     v-if="mode === 'create'"
+    :nodes="dashboard.slavers.value"
     @cancel="mode = 'list'"
     @submit="createEnvironment"
   />
@@ -84,7 +90,7 @@ async function registerExisting() {
       <section class="panel">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
           <div class="flex flex-wrap items-center gap-2">
-            <button class="btn bg-blue-600 hover:bg-blue-700" type="button" @click="mode = 'create'">
+            <button class="btn bg-blue-600 hover:bg-blue-700" type="button" @click="openCreateEnvironment">
               <Plus class="h-4 w-4" aria-hidden="true" />
               新建环境
             </button>
