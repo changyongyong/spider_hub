@@ -3,10 +3,10 @@ import {
   deleteWorker,
   getHealth,
   listJobs,
-  listSlavers,
+  listSlaves,
   listWorkers,
-  refreshSlavers,
-  registerSlaver,
+  refreshSlaves,
+  registerSlave,
   createBrowserEnvironment,
   submitJob
 } from "../api/masterApi";
@@ -15,7 +15,7 @@ import { countByStatus } from "../domain/dashboard";
 export function useDashboard() {
   const health = ref({ ok: false, workers: 0 });
   const workers = ref([]);
-  const slavers = ref([]);
+  const slaves = ref([]);
   const jobs = ref([]);
   const latestResult = ref({});
   const loading = ref(false);
@@ -35,17 +35,17 @@ export function useDashboard() {
     error.value = "";
 
     try {
-      const slaversPromise = refreshRemote ? refreshSlavers() : listSlavers();
-      const workersPromise = refreshRemote ? slaversPromise.then(() => listWorkers()) : listWorkers();
-      const [nextHealth, nextWorkers, nextJobs, nextSlavers] = await Promise.all([
+      const slavesPromise = refreshRemote ? refreshSlaves() : listSlaves();
+      const workersPromise = refreshRemote ? slavesPromise.then(() => listWorkers()) : listWorkers();
+      const [nextHealth, nextWorkers, nextJobs, nextSlaves] = await Promise.all([
         getHealth(),
         workersPromise,
         listJobs(),
-        slaversPromise
+        slavesPromise
       ]);
       health.value = nextHealth;
       workers.value = nextWorkers;
-      slavers.value = nextSlavers;
+      slaves.value = nextSlaves;
       jobs.value = nextJobs;
       lastUpdatedAt.value = new Date();
     } catch (caught) {
@@ -55,12 +55,12 @@ export function useDashboard() {
     }
   }
 
-  async function createManagedSlaver(payload) {
+  async function createManagedSlave(payload) {
     return runAction("正在创建 Playwright 环境...", () => createBrowserEnvironment(payload), true);
   }
 
-  async function attachSlaver(payload) {
-    return runAction("正在注册 slaver...", () => registerSlaver(payload), true);
+  async function attachSlave(payload) {
+    return runAction("正在注册 slave...", () => registerSlave(payload), true);
   }
 
   async function removeWorker(workerId) {
@@ -106,7 +106,7 @@ export function useDashboard() {
   return {
     health,
     workers,
-    slavers,
+    slaves,
     remoteWorkers,
     jobs,
     jobCounts,
@@ -116,8 +116,8 @@ export function useDashboard() {
     error,
     lastUpdatedAt,
     refresh,
-    createManagedSlaver,
-    attachSlaver,
+    createManagedSlave,
+    attachSlave,
     removeWorker,
     createJob,
     startPolling,

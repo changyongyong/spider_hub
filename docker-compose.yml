@@ -2,7 +2,7 @@ services:
   spider-master:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.master
     container_name: spider-master
     command:
       - python
@@ -28,7 +28,6 @@ services:
         reservations:
           cpus: "0.10"
           memory: 128M
-    shm_size: "2gb"
     restart: unless-stopped
 
   spider-webui:
@@ -42,14 +41,14 @@ services:
       - "8080:80"
     restart: unless-stopped
 
-  spider-slaver:
+  spider-slave:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.slave
     command:
       - python
       - -m
-      - src.slaver
+      - src.slave
       - --host
       - 0.0.0.0
       - --port
@@ -57,8 +56,8 @@ services:
       - --master-url
       - http://spider-master:8000
       - --env-name
-      - docker-slaver-node
-      - --max-workers
+      - docker-slave-node
+      - --max-environments
       - "4"
     depends_on:
       - spider-master

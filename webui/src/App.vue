@@ -3,8 +3,8 @@ import { ref } from "vue";
 import { onMounted } from "vue";
 import { AlertCircle, Boxes, Filter, Loader2, Plus, RefreshCw, Search } from "lucide-vue-next";
 import SummaryStrip from "./components/dashboard/SummaryStrip.vue";
-import SlaverEnvironmentForm from "./components/slavers/SlaverEnvironmentForm.vue";
-import WorkerTable from "./components/slavers/WorkerTable.vue";
+import SlaveEnvironmentForm from "./components/slaves/SlaveEnvironmentForm.vue";
+import WorkerTable from "./components/slaves/WorkerTable.vue";
 import { useDashboard } from "./composables/useDashboard";
 
 const dashboard = useDashboard();
@@ -17,7 +17,7 @@ onMounted(async () => {
 });
 
 async function createEnvironment(payload) {
-  await dashboard.createManagedSlaver(payload);
+  await dashboard.createManagedSlave(payload);
   mode.value = "list";
 }
 
@@ -28,15 +28,15 @@ async function openCreateEnvironment() {
 
 async function registerExisting() {
   if (!registerUrl.value.trim()) return;
-  await dashboard.attachSlaver({ base_url: registerUrl.value.trim() });
+  await dashboard.attachSlave({ base_url: registerUrl.value.trim() });
   registerUrl.value = "";
 }
 </script>
 
 <template>
-  <SlaverEnvironmentForm
+  <SlaveEnvironmentForm
     v-if="mode === 'create'"
-    :nodes="dashboard.slavers.value"
+    :nodes="dashboard.slaves.value"
     @cancel="mode = 'list'"
     @submit="createEnvironment"
   />
@@ -46,7 +46,7 @@ async function registerExisting() {
       <div class="mx-auto flex max-w-[1500px] flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 class="text-xl font-semibold text-ink">Spider Master Console</h1>
-          <p class="mt-1 text-sm text-muted">Slaver 环境列表和浏览器启动环境管理。</p>
+          <p class="mt-1 text-sm text-muted">Slave 环境列表和浏览器启动环境管理。</p>
         </div>
         <div class="text-sm text-muted">
           {{ dashboard.lastUpdatedAt.value ? dashboard.lastUpdatedAt.value.toLocaleString() : "等待刷新" }}
@@ -95,7 +95,7 @@ async function registerExisting() {
               新建环境
             </button>
             <form class="flex items-center gap-2" @submit.prevent="registerExisting">
-              <input v-model.trim="registerUrl" class="input w-72" placeholder="注册已有 slaver: http://127.0.0.1:8101">
+              <input v-model.trim="registerUrl" class="input w-72" placeholder="注册已有 slave: http://127.0.0.1:8101">
               <button class="btn btn-secondary" type="submit">注册</button>
             </form>
             <button class="btn btn-secondary w-9 px-0" type="button" title="刷新" @click="dashboard.refresh({ refreshRemote: true })">

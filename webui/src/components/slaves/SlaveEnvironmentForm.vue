@@ -158,7 +158,7 @@ function submit() {
 
 function nodeLabel(node) {
   const slots = node.available_slots ?? "-";
-  const total = node.max_workers ?? "-";
+  const total = node.max_environments ?? node.max_workers ?? "-";
   return `${node.node_id} (${node.base_url}, ${slots}/${total} 可用)`;
 }
 </script>
@@ -210,9 +210,9 @@ function nodeLabel(node) {
               <input v-model.trim="form.env_name" class="input max-w-4xl" required>
             </label>
             <label class="label max-w-4xl">
-              Slaver 节点 *
+              Slave 节点 *
               <select v-model="form.node_id" class="input" required>
-                <option value="" disabled>请选择承载该 Playwright 环境的 slaver 节点</option>
+                <option value="" disabled>请选择承载该 Playwright 环境的 slave 节点</option>
                 <option
                   v-for="node in props.nodes"
                   :key="node.node_id"
@@ -224,7 +224,7 @@ function nodeLabel(node) {
               </select>
             </label>
             <div v-if="props.nodes.length === 0" class="max-w-4xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              当前没有可用 slaver 节点。请先启动或注册 slaver 节点，再创建 Playwright 环境。
+              当前没有可用 slave 节点。请先启动或注册 slave 节点，再创建 Playwright 环境。
             </div>
             <div class="grid max-w-4xl gap-4 md:grid-cols-2">
               <label class="label">

@@ -1,49 +1,11 @@
 import asyncio
 import subprocess
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from src.page_extractors import (
-    USER_AGENT,
-    accept_cookies,
-    body_text,
-    collect_links,
-    wait_for_page,
-)
-from src.proxy_utils import proxy_label
-
-
-@dataclass
-class WorkerConfig:
-    worker_id: str
-    proxy: dict[str, str] | None
-    env_name: str | None = None
-    headful: bool = False
-    browser_channel: str | None = None
-    challenge_wait: float = 0
-    launch_args: list[str] = field(default_factory=list)
-    user_agent: str | None = None
-    locale: str = "pl-PL"
-    timezone_id: str | None = None
-    viewport_width: int = 1365
-    viewport_height: int = 768
-    block_images: bool = False
-    block_media: bool = False
-    cookies: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class WorkerStats:
-    started_at: str
-    requests: int = 0
-    failures: int = 0
-    last_url: str | None = None
-    last_error: str | None = None
-    busy: bool = False
 
 
 @dataclass
@@ -77,147 +39,6 @@ class JobState:
         self.status = "failed"
         self.error = str(error)
         self.updated_at = datetime.now(timezone.utc).isoformat()
-
-
-class TaskWorker:
-    def __init__(self, playwright, config: WorkerConfig) -> None:
-        self.playwright = playwright
-        self.config = config
-        self.browser = None
-        self.lock = asyncio.Lock()
-        self.stats = WorkerStats(started_at=datetime.now(timezone.utc).isoformat())
-
-    async def start(self) -> None:
-        if self.browser:
-            return
-
-        self.browser = await self.playwright.chromium.launch(
-            channel=self.config.browser_channel,
-            headless=not self.config.headful,
-            args=["--disable-blink-features=AutomationControlled", *self.config.launch_args],
-            proxy=self.config.proxy,
-        )
-
-    async def stop(self) -> None:
-        if self.browser:
-            await self.browser.close()
-            self.browser = None
-
-    async def fetch(
-        self,
-        url: str,
-        wait_seconds: float | None = None,
-        include_html: bool = False,
-        include_links: bool = True,
-    ) -> dict[str, Any]:
-        async with self.lock:
-            if not self.browser:
-                await self.start()
-
-            self.stats.busy = True
-            self.stats.last_url = url
-            started = time.monotonic()
-
-            context = await self.browser.new_context(
-                locale=self.config.locale,
-                timezone_id=self.config.timezone_id,
-                user_agent=self.config.user_agent or USER_AGENT,
-                viewport={
-                    "width": self.config.viewport_width,
-                    "height": self.config.viewport_height,
-                },
-            )
-            try:
-                if self.config.cookies:
-                    await context.add_cookies(self.config.cookies)
-                if self.config.block_images or self.config.block_media:
-                    await context.route("**/*", self._route_resource)
-
-                page = await context.new_page()
-                await page.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-                )
-
-                response = await page.goto(url, wait_until="commit", timeout=60_000)
-                status = response.status if response else None
-                await accept_cookies(page)
-                await wait_for_page(page)
-
-                wait_after_load = self.config.challenge_wait if wait_seconds is None else wait_seconds
-                if wait_after_load:
-                    await asyncio.sleep(wait_after_load)
-
-                text = await body_text(page)
-                result: dict[str, Any] = {
-                    "ok": True,
-                    "worker_id": self.config.worker_id,
-                    "proxy": proxy_label(self.config.proxy),
-                    "url": url,
-                    "final_url": page.url,
-                    "status": status,
-                    "title": await page.title(),
-                    "body_text": text,
-                    "body_preview": " ".join(text.split())[:500],
-                    "elapsed_seconds": round(time.monotonic() - started, 3),
-                }
-
-                if include_links:
-                    result["links"] = await collect_links(page)
-                if include_html:
-                    result["html"] = await page.content()
-
-                self.stats.requests += 1
-                self.stats.last_error = None
-                return result
-            except Exception as error:
-                self.stats.failures += 1
-                self.stats.last_error = str(error)
-                raise
-            finally:
-                self.stats.busy = False
-                await context.close()
-
-    async def _route_resource(self, route) -> None:
-        resource_type = route.request.resource_type
-        if self.config.block_images and resource_type == "image":
-            await route.abort()
-            return
-        if self.config.block_media and resource_type == "media":
-            await route.abort()
-            return
-        await route.continue_()
-
-    def info(self) -> dict[str, Any]:
-        return {
-            "worker_id": self.config.worker_id,
-            "kind": "local",
-            "env_name": self.config.env_name,
-            "proxy": proxy_label(self.config.proxy),
-            "headful": self.config.headful,
-            "browser_channel": self.config.browser_channel,
-            "challenge_wait": self.config.challenge_wait,
-            "config": self.config_public(),
-            "running": self.browser is not None,
-            "stats": self.stats.__dict__,
-        }
-
-    def config_public(self) -> dict[str, Any]:
-        return {
-            "env_name": self.config.env_name,
-            "proxy": proxy_label(self.config.proxy),
-            "headful": self.config.headful,
-            "browser_channel": self.config.browser_channel,
-            "challenge_wait": self.config.challenge_wait,
-            "launch_args": self.config.launch_args,
-            "user_agent": self.config.user_agent or USER_AGENT,
-            "locale": self.config.locale,
-            "timezone_id": self.config.timezone_id,
-            "viewport_width": self.config.viewport_width,
-            "viewport_height": self.config.viewport_height,
-            "block_images": self.config.block_images,
-            "block_media": self.config.block_media,
-            "cookies_count": len(self.config.cookies),
-        }
 
 
 class RemoteBrowserWorker:
@@ -270,7 +91,7 @@ class RemoteBrowserWorker:
 
         self.last_seen = datetime.now(timezone.utc).isoformat()
         self.last_error = None
-        self.status = result.get("slaver", self.status)
+        self.status = result.get("slave") or result.get("slaver") or self.status
         return result
 
     async def stop(self) -> None:
@@ -296,11 +117,11 @@ class RemoteBrowserWorker:
             "running": process_status is None if self.managed else True,
             "stats": self.status.get("stats", {}),
             "config": self.status.get("config", {}),
-            "slaver": self.status,
+            "slave": self.status,
         }
 
 
-class SlaverNode:
+class SlaveNode:
     def __init__(
         self,
         node_id: str,
@@ -354,7 +175,8 @@ class SlaverNode:
             "managed": self.managed is not None,
             "process_status": process_status,
             "running": process_status is None if self.managed else True,
-            "max_workers": self.status.get("max_workers"),
+            "max_environments": self.status.get("max_environments") or self.status.get("max_workers"),
+            "max_workers": self.status.get("max_environments") or self.status.get("max_workers"),
             "worker_count": self.status.get("worker_count", 0),
             "available_slots": self.status.get("available_slots"),
             "workers": self.status.get("workers", []),
@@ -375,8 +197,8 @@ class Master:
         self.browser_channel = browser_channel
         self.challenge_wait = challenge_wait
         self.env_config = env_config or {}
-        self.nodes: dict[str, SlaverNode] = {}
-        self.workers: dict[str, TaskWorker | RemoteBrowserWorker] = {}
+        self.nodes: dict[str, SlaveNode] = {}
+        self.workers: dict[str, RemoteBrowserWorker] = {}
         self.jobs: dict[str, JobState] = {}
         self.worker_index = 0
         self.node_index = 0
@@ -407,14 +229,14 @@ class Master:
     def list_workers(self) -> list[dict[str, Any]]:
         return [worker.info() for worker in self.workers.values()]
 
-    def list_slavers(self) -> list[dict[str, Any]]:
+    def list_slaves(self) -> list[dict[str, Any]]:
         return [node.info() for node in self.nodes.values()]
 
     def choose_worker(
         self,
         worker_id: str | None = None,
         strategy: str | None = None,
-    ) -> TaskWorker | RemoteBrowserWorker:
+    ) -> RemoteBrowserWorker:
         if worker_id:
             return self.workers[worker_id]
         if not self.workers:
@@ -431,13 +253,13 @@ class Master:
         self.worker_index += 1
         return worker
 
-    async def register_slaver(
+    async def register_slave(
         self,
         base_url: str,
         worker_id: str | None = None,
         managed: ManagedProcess | None = None,
     ) -> dict[str, Any]:
-        node = SlaverNode(
+        node = SlaveNode(
             node_id=worker_id or f"node-{uuid.uuid4().hex[:8]}",
             base_url=base_url,
             managed=managed,
@@ -453,7 +275,7 @@ class Master:
         self._sync_node_workers(node)
         return node.info()
 
-    async def update_slaver(
+    async def update_slave(
         self,
         worker_id: str,
         base_url: str | None = None,
@@ -467,7 +289,7 @@ class Master:
             worker.last_error = str(error)
         return worker.info()
 
-    async def stop_slaver_node(self, node_id: str) -> dict[str, Any]:
+    async def stop_slave_node(self, node_id: str) -> dict[str, Any]:
         node = self.nodes.pop(node_id)
         for worker_id, worker in list(self.workers.items()):
             if isinstance(worker, RemoteBrowserWorker) and worker.node_id == node_id:
@@ -487,11 +309,11 @@ class Master:
     ) -> dict[str, Any]:
         env_config = {**self.env_config, **(env_config or {})}
         if not node_id:
-            raise RuntimeError("node_id is required; choose a slaver node before creating an environment")
+            raise RuntimeError("node_id is required; choose a slave node before creating an environment")
         node = self.nodes[node_id]
         node_info = node.info()
         if node_info.get("available_slots") == 0:
-            raise RuntimeError(f"slaver node {node_id} has no available slots")
+            raise RuntimeError(f"slave node {node_id} has no available slots")
 
         worker_id = f"env-{uuid.uuid4().hex[:8]}"
         merged_config = {
@@ -511,7 +333,7 @@ class Master:
         self.workers[worker.worker_id] = worker
         return worker.info()
 
-    def _next_slaver_port(self) -> int:
+    def _next_slave_port(self) -> int:
         used = {
             worker.managed.port
             for worker in self.nodes.values()
@@ -522,7 +344,7 @@ class Master:
             port += 1
         return port
 
-    async def refresh_slavers(self) -> list[dict[str, Any]]:
+    async def refresh_slaves(self) -> list[dict[str, Any]]:
         result = []
         for node in self.nodes.values():
             try:
@@ -533,7 +355,7 @@ class Master:
             result.append(node.info())
         return result
 
-    def _sync_node_workers(self, node: SlaverNode) -> None:
+    def _sync_node_workers(self, node: SlaveNode) -> None:
         for environment in node.status.get("workers", []):
             worker_id = environment.get("worker_id")
             if not worker_id:
@@ -592,10 +414,8 @@ class Master:
         asyncio.create_task(run_job())
         return job
 
-    def worker_id_for(self, worker: TaskWorker | RemoteBrowserWorker) -> str:
-        if isinstance(worker, RemoteBrowserWorker):
-            return worker.worker_id
-        return worker.config.worker_id
+    def worker_id_for(self, worker: RemoteBrowserWorker) -> str:
+        return worker.worker_id
 
     def get_job(self, job_id: str) -> JobState:
         return self.jobs[job_id]

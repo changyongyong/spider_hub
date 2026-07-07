@@ -8,20 +8,20 @@ export function listWorkers() {
   return request("/workers");
 }
 
-export function refreshSlavers() {
-  return request("/slavers?refresh=true");
+export function refreshSlaves() {
+  return request("/slaves?refresh=true");
 }
 
-export function listSlavers() {
-  return request("/slavers");
+export function listSlaves() {
+  return request("/slaves");
 }
 
-export function registerSlaver(payload) {
-  return request("/slavers", jsonOptions("POST", payload));
+export function registerSlave(payload) {
+  return request("/slaves", jsonOptions("POST", payload));
 }
 
 export function createBrowserEnvironment(payload) {
-  return request("/slavers/start", jsonOptions("POST", payload));
+  return request("/slaves/start", jsonOptions("POST", payload));
 }
 
 export function deleteWorker(workerId) {

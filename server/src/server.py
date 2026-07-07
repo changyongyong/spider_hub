@@ -21,18 +21,18 @@ class FetchRequest(BaseModel):
     include_links: bool = True
 
 
-class RegisterSlaverRequest(BaseModel):
+class RegisterSlaveRequest(BaseModel):
     base_url: str
     worker_id: str | None = None
 
 
-class SelfRegisterSlaverRequest(BaseModel):
+class SelfRegisterSlaveRequest(BaseModel):
     port: int = Field(ge=1, le=65535)
     worker_id: str | None = None
     base_url: str | None = None
 
 
-class UpdateSlaverRequest(BaseModel):
+class UpdateSlaveRequest(BaseModel):
     base_url: str | None = None
 
 
@@ -45,7 +45,7 @@ class ProxyConfigRequest(BaseModel):
     password: str | None = None
 
 
-class StartSlaverRequest(BaseModel):
+class StartSlaveRequest(BaseModel):
     node_id: str | None = None
     host: str = "127.0.0.1"
     port: int | None = Field(default=None, ge=1, le=65535)
@@ -98,7 +98,7 @@ def proxy_to_playwright(proxy: ProxyConfigRequest | None) -> dict[str, str] | No
     return result
 
 
-def slaver_env_config(request: StartSlaverRequest) -> dict[str, Any]:
+def slave_env_config(request: StartSlaveRequest) -> dict[str, Any]:
     return {
         "env_name": request.env_name,
         "proxy": proxy_to_playwright(request.proxy),
@@ -142,26 +142,29 @@ def create_app(master: Master) -> FastAPI:
     async def list_workers() -> list[dict[str, Any]]:
         return app.state.master.list_workers()
 
-    @app.get("/slavers")
-    async def list_slavers(refresh: bool = False) -> list[dict[str, Any]]:
+    @app.get("/slavers", include_in_schema=False)
+    @app.get("/slaves")
+    async def list_slaves(refresh: bool = False) -> list[dict[str, Any]]:
         if refresh:
-            return await app.state.master.refresh_slavers()
-        return app.state.master.list_slavers()
+            return await app.state.master.refresh_slaves()
+        return app.state.master.list_slaves()
 
-    @app.post("/slavers")
-    async def register_slaver(request: RegisterSlaverRequest) -> dict[str, Any]:
+    @app.post("/slavers", include_in_schema=False)
+    @app.post("/slaves")
+    async def register_slave(request: RegisterSlaveRequest) -> dict[str, Any]:
         try:
-            return await app.state.master.register_slaver(
+            return await app.state.master.register_slave(
                 base_url=request.base_url,
                 worker_id=request.worker_id,
             )
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.post("/slavers/register-self")
+    @app.post("/slavers/register-self", include_in_schema=False)
+    @app.post("/slaves/register-self")
     async def register_self(
         request: Request,
-        body: SelfRegisterSlaverRequest,
+        body: SelfRegisterSlaveRequest,
     ) -> dict[str, Any]:
         client_host = request.client.host if request.client else None
         base_url = body.base_url
@@ -171,15 +174,16 @@ def create_app(master: Master) -> FastAPI:
             base_url = f"http://{client_host}:{body.port}"
 
         try:
-            return await app.state.master.register_slaver(
+            return await app.state.master.register_slave(
                 base_url=base_url,
                 worker_id=body.worker_id,
             )
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.post("/slavers/start")
-    async def start_slaver(request: StartSlaverRequest) -> dict[str, Any]:
+    @app.post("/slavers/start", include_in_schema=False)
+    @app.post("/slaves/start")
+    async def start_slave(request: StartSlaveRequest) -> dict[str, Any]:
         try:
             return await app.state.master.create_browser_environment(
                 node_id=request.node_id,
@@ -188,29 +192,31 @@ def create_app(master: Master) -> FastAPI:
                 headful=request.headful,
                 browser_channel=request.browser_channel,
                 challenge_wait=request.challenge_wait,
-                env_config=slaver_env_config(request),
+                env_config=slave_env_config(request),
             )
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.patch("/slavers/{worker_id}")
-    async def update_slaver(worker_id: str, request: UpdateSlaverRequest) -> dict[str, Any]:
+    @app.patch("/slavers/{worker_id}", include_in_schema=False)
+    @app.patch("/slaves/{worker_id}")
+    async def update_slave(worker_id: str, request: UpdateSlaveRequest) -> dict[str, Any]:
         try:
-            return await app.state.master.update_slaver(
+            return await app.state.master.update_slave(
                 worker_id=worker_id,
                 base_url=request.base_url,
             )
         except KeyError as error:
-            raise HTTPException(status_code=404, detail="slaver not found") from error
+            raise HTTPException(status_code=404, detail="slave not found") from error
         except TypeError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.delete("/slavers/{worker_id}")
-    async def delete_slaver(worker_id: str) -> dict[str, Any]:
+    @app.delete("/slavers/{worker_id}", include_in_schema=False)
+    @app.delete("/slaves/{worker_id}")
+    async def delete_slave(worker_id: str) -> dict[str, Any]:
         try:
-            return await app.state.master.stop_slaver_node(worker_id)
+            return await app.state.master.stop_slave_node(worker_id)
         except KeyError as error:
-            raise HTTPException(status_code=404, detail="slaver not found") from error
+            raise HTTPException(status_code=404, detail="slave not found") from error
 
     @app.delete("/workers/{worker_id}")
     async def stop_worker(worker_id: str) -> dict[str, Any]:

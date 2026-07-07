@@ -58,7 +58,7 @@ function configLine(worker) {
       </thead>
       <tbody>
         <tr v-if="workers.length === 0">
-          <td class="table-cell text-muted" colspan="8">暂无 slaver 环境，点击新建环境开始。</td>
+          <td class="table-cell text-muted" colspan="8">暂无 slave 环境，点击新建环境开始。</td>
         </tr>
         <tr v-for="worker in workers" :key="worker.worker_id">
           <td class="table-cell">
