@@ -1,0 +1,27 @@
+services:
+  spider-master:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spider-master
+    command:
+      - python
+      - -m
+      - src.server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --strategy
+      - round_robin
+    ports:
+      - "8000:8000"
+    volumes:
+      - spider-output:/app/server/output
+    environment:
+      PYTHONUNBUFFERED: "1"
+    shm_size: "2gb"
+    restart: unless-stopped
+
+volumes:
+  spider-output:
