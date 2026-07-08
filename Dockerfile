@@ -9,13 +9,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY server/requirements-master.txt /app/server/requirements-master.txt
-RUN pip install --no-cache-dir -r /app/server/requirements-master.txt
+COPY master/requirements.txt /app/master/requirements.txt
+RUN pip install --no-cache-dir -r /app/master/requirements.txt
 
-COPY server/ /app/server/
+COPY master/ /app/master/
 
-WORKDIR /app/server
+WORKDIR /app/master
 
 EXPOSE 8000
 
-CMD ["python", "-m", "src.server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "src.server"]

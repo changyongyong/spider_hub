@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import os
 import socket
 import uuid
 from contextlib import asynccontextmanager
@@ -59,6 +60,7 @@ class SlaveRuntime:
         block_media: bool = False,
         cookies: list[dict[str, Any]] | None = None,
         master_url: str | None = None,
+        master_token: str | None = None,
         public_url: str | None = None,
         port: int = 8101,
         max_environments: int = 4,
@@ -80,6 +82,7 @@ class SlaveRuntime:
         self.block_media = block_media
         self.cookies = cookies or []
         self.master_url = master_url.rstrip("/") if master_url else None
+        self.master_token = master_token
         self.public_url = public_url.rstrip("/") if public_url else None
         self.port = port
         self.max_environments = max_environments
@@ -216,12 +219,14 @@ class SlaveRuntime:
             "worker_id": self.node_id,
             "base_url": self.public_url,
         }
+        headers = {"X-Internal-Token": self.master_token} if self.master_token else None
         for _ in range(30):
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
                     response = await client.post(
                         f"{self.master_url}/slaves/register-self",
                         json=payload,
+                        headers=headers,
                     )
                     response.raise_for_status()
                 return
@@ -290,16 +295,17 @@ def create_app(runtime: SlaveRuntime) -> FastAPI:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one Playwright slave task.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8101)
-    parser.add_argument("--worker-id")
-    parser.add_argument("--headful", action="store_true", help="show browser window")
-    parser.add_argument("--browser-channel", choices=("chrome", "msedge"))
-    parser.add_argument("--challenge-wait", type=float, default=0)
-    parser.add_argument("--env-name")
-    parser.add_argument("--master-url")
-    parser.add_argument("--public-url")
-    parser.add_argument("--max-environments", type=int, help="max Playwright browser environments on this slave node")
+    parser.add_argument("--host", default=os.getenv("SPIDER_SLAVE_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("SPIDER_SLAVE_PORT", "8101")))
+    parser.add_argument("--worker-id", default=os.getenv("SPIDER_SLAVE_WORKER_ID"))
+    parser.add_argument("--headful", action="store_true", default=env_bool("SPIDER_SLAVE_HEADFUL"), help="show browser window")
+    parser.add_argument("--browser-channel", default=os.getenv("SPIDER_SLAVE_BROWSER_CHANNEL"))
+    parser.add_argument("--challenge-wait", type=float, default=float(os.getenv("SPIDER_SLAVE_CHALLENGE_WAIT", "0")))
+    parser.add_argument("--env-name", default=os.getenv("SPIDER_SLAVE_ENV_NAME"))
+    parser.add_argument("--master-url", default=os.getenv("SPIDER_SLAVE_MASTER_URL"))
+    parser.add_argument("--master-token", default=os.getenv("SPIDER_SLAVE_MASTER_TOKEN"))
+    parser.add_argument("--public-url", default=os.getenv("SPIDER_SLAVE_PUBLIC_URL"))
+    parser.add_argument("--max-environments", type=int, default=env_int("SPIDER_SLAVE_MAX_ENVIRONMENTS"), help="max Playwright browser environments on this slave node")
     parser.add_argument("--max-workers", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--create-initial-worker", action="store_true")
     parser.add_argument("--config-json", help="full slave environment config as JSON")
@@ -309,6 +315,18 @@ def parse_args() -> argparse.Namespace:
 def default_worker_id(port: int) -> str:
     host = socket.gethostname().replace(" ", "-")
     return f"{host}-{port}-{uuid.uuid4().hex[:6]}"
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str) -> int | None:
+    value = os.getenv(name)
+    return int(value) if value else None
 
 
 def main() -> None:
@@ -331,6 +349,7 @@ def main() -> None:
         block_media=bool(config.get("block_media")),
         cookies=config.get("cookies") or [],
         master_url=config.get("master_url") or args.master_url,
+        master_token=config.get("master_token") or args.master_token or os.getenv("SPIDER_INTERNAL_API_TOKEN"),
         public_url=config.get("public_url") or args.public_url,
         port=args.port,
         max_environments=(

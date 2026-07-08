@@ -8,18 +8,24 @@ services:
       - python
       - -m
       - src.server
-      - --host
-      - 0.0.0.0
-      - --port
+    expose:
       - "8000"
-      - --strategy
-      - round_robin
-    ports:
-      - "8000:8000"
     volumes:
-      - spider-output:/app/server/output
+      - spider-output:/app/master/output
     environment:
       PYTHONUNBUFFERED: "1"
+      SPIDER_ENV: ${SPIDER_ENV:-production}
+      SPIDER_MASTER_HOST: ${SPIDER_MASTER_HOST:-0.0.0.0}
+      SPIDER_MASTER_PORT: ${SPIDER_MASTER_PORT:-8000}
+      SPIDER_MASTER_STRATEGY: ${SPIDER_MASTER_STRATEGY:-round_robin}
+      SPIDER_MASTER_HEADFUL: ${SPIDER_MASTER_HEADFUL:-false}
+      SPIDER_MASTER_BROWSER_CHANNEL: ${SPIDER_MASTER_BROWSER_CHANNEL:-}
+      SPIDER_MASTER_CHALLENGE_WAIT: ${SPIDER_MASTER_CHALLENGE_WAIT:-0}
+      SPIDER_MASTER_USERNAME: ${SPIDER_MASTER_USERNAME:-admin}
+      SPIDER_MASTER_PASSWORD: ${SPIDER_MASTER_PASSWORD:-admin}
+      SPIDER_SESSION_SECRET: ${SPIDER_SESSION_SECRET:-change-me}
+      SPIDER_SESSION_TTL_SECONDS: ${SPIDER_SESSION_TTL_SECONDS:-86400}
+      SPIDER_INTERNAL_API_TOKEN: ${SPIDER_INTERNAL_API_TOKEN:-change-me}
     deploy:
       resources:
         limits:
@@ -49,20 +55,17 @@ services:
       - python
       - -m
       - src.slave
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8101"
-      - --master-url
-      - http://spider-master:8000
-      - --env-name
-      - docker-slave-node
-      - --max-environments
-      - "4"
     depends_on:
       - spider-master
     environment:
       PYTHONUNBUFFERED: "1"
+      SPIDER_ENV: ${SPIDER_ENV:-production}
+      SPIDER_INTERNAL_API_TOKEN: ${SPIDER_INTERNAL_API_TOKEN:-change-me}
+      SPIDER_SLAVE_HOST: ${SPIDER_SLAVE_HOST:-0.0.0.0}
+      SPIDER_SLAVE_PORT: ${SPIDER_SLAVE_PORT:-8101}
+      SPIDER_SLAVE_MASTER_URL: ${SPIDER_SLAVE_MASTER_URL:-http://spider-master:8000}
+      SPIDER_SLAVE_ENV_NAME: ${SPIDER_SLAVE_ENV_NAME:-docker-slave-node}
+      SPIDER_SLAVE_MAX_ENVIRONMENTS: ${SPIDER_SLAVE_MAX_ENVIRONMENTS:-4}
     deploy:
       resources:
         limits:

@@ -35,6 +35,7 @@ temp/
 .env
 .env.*
 !.env.example
+!.env.*.example
 *.local.json
 .claude
 server/proxies.txt

@@ -1,19 +1,39 @@
 <script setup>
-import { ref } from "vue";
-import { onMounted } from "vue";
-import { AlertCircle, Boxes, Filter, Loader2, Plus, RefreshCw, Search } from "lucide-vue-next";
+import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { AlertCircle, Boxes, Filter, Loader2, LogOut, Plus, RefreshCw, Search } from "lucide-vue-next";
 import SummaryStrip from "./components/dashboard/SummaryStrip.vue";
 import SlaveEnvironmentForm from "./components/slaves/SlaveEnvironmentForm.vue";
 import WorkerTable from "./components/slaves/WorkerTable.vue";
+import { apiBaseUrl, apiProxyTarget, clearAuthSession, getAuthSession, setAuthSession } from "./api/http";
+import { login, logout } from "./api/masterApi";
 import { useDashboard } from "./composables/useDashboard";
 
 const dashboard = useDashboard();
 const mode = ref("list");
 const registerUrl = ref("");
+const session = ref(getAuthSession());
+const loginForm = reactive({ username: "", password: "" });
+const loginError = ref("");
+const loginLoading = ref(false);
+const refreshIntervals = [
+  { label: "关闭", value: 0 },
+  { label: "3 秒", value: 3000 },
+  { label: "5 秒", value: 5000 },
+  { label: "10 秒", value: 10000 },
+  { label: "30 秒", value: 30000 }
+];
+const apiTarget = apiBaseUrl || apiProxyTarget || "same-origin";
 
 onMounted(async () => {
-  await dashboard.refresh();
-  dashboard.startPolling();
+  window.addEventListener("spider-auth-expired", handleAuthExpired);
+  if (session.value) {
+    await dashboard.refresh();
+    dashboard.startPolling();
+  }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("spider-auth-expired", handleAuthExpired);
 });
 
 async function createEnvironment(payload) {
@@ -31,25 +51,103 @@ async function registerExisting() {
   await dashboard.attachSlave({ base_url: registerUrl.value.trim() });
   registerUrl.value = "";
 }
+
+function changeRefreshInterval(event) {
+  dashboard.startPolling(Number(event.target.value));
+}
+
+async function submitLogin() {
+  loginLoading.value = true;
+  loginError.value = "";
+  try {
+    const nextSession = await login(loginForm);
+    setAuthSession(nextSession);
+    session.value = nextSession;
+    loginForm.password = "";
+    await dashboard.refresh();
+    dashboard.startPolling();
+  } catch (caught) {
+    loginError.value = caught.message;
+  } finally {
+    loginLoading.value = false;
+  }
+}
+
+async function signOut() {
+  try {
+    await logout();
+  } catch {
+    // Local logout still clears the browser session.
+  }
+  clearAuthSession();
+  dashboard.stopPolling();
+  mode.value = "list";
+  session.value = null;
+}
+
+function handleAuthExpired() {
+  dashboard.stopPolling();
+  mode.value = "list";
+  session.value = null;
+}
 </script>
 
 <template>
   <SlaveEnvironmentForm
-    v-if="mode === 'create'"
+    v-if="session && mode === 'create'"
     :nodes="dashboard.slaves.value"
     @cancel="mode = 'list'"
     @submit="createEnvironment"
   />
+
+  <div v-else-if="!session" class="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+    <form class="panel grid w-full max-w-sm gap-4 p-6" @submit.prevent="submitLogin">
+      <div>
+        <h1 class="text-xl font-semibold text-ink">Spider Master</h1>
+        <p class="mt-1 text-sm text-muted">登录后管理 slave 节点和 Playwright 环境。</p>
+      </div>
+      <label class="label">
+        账号
+        <input v-model.trim="loginForm.username" class="input" autocomplete="username" required>
+      </label>
+      <label class="label">
+        密码
+        <input v-model="loginForm.password" class="input" autocomplete="current-password" type="password" required>
+      </label>
+      <div v-if="loginError" class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        {{ loginError }}
+      </div>
+      <button class="btn h-10" type="submit" :disabled="loginLoading">
+        <Loader2 v-if="loginLoading" class="h-4 w-4 animate-spin" aria-hidden="true" />
+        登录
+      </button>
+      <p class="text-xs text-muted">API: {{ apiTarget }}</p>
+    </form>
+  </div>
 
   <div v-else class="min-h-screen">
     <header class="border-b border-line bg-white px-6 py-3">
       <div class="mx-auto flex max-w-[1500px] flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 class="text-xl font-semibold text-ink">Spider Master Console</h1>
-          <p class="mt-1 text-sm text-muted">Slave 环境列表和浏览器启动环境管理。</p>
+          <p class="mt-1 text-sm text-muted">Slave 环境列表和浏览器启动环境管理。API: {{ apiTarget }}</p>
         </div>
-        <div class="text-sm text-muted">
-          {{ dashboard.lastUpdatedAt.value ? dashboard.lastUpdatedAt.value.toLocaleString() : "等待刷新" }}
+        <div class="flex flex-wrap items-center gap-2 text-sm text-muted">
+          <span>{{ session.username }}</span>
+          <span>{{ dashboard.lastUpdatedAt.value ? dashboard.lastUpdatedAt.value.toLocaleString() : "等待刷新" }}</span>
+          <select class="input h-9 w-28" :value="dashboard.refreshIntervalMs.value" @change="changeRefreshInterval">
+            <option v-for="item in refreshIntervals" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </option>
+          </select>
+          <button class="btn btn-secondary h-9" type="button" @click="dashboard.refresh({ refreshRemote: true })">
+            <RefreshCw class="h-4 w-4" aria-hidden="true" />
+            刷新
+          </button>
+          <button class="btn btn-secondary h-9" type="button" @click="signOut">
+            <LogOut class="h-4 w-4" aria-hidden="true" />
+            退出
+          </button>
         </div>
       </div>
     </header>
@@ -98,9 +196,6 @@ async function registerExisting() {
               <input v-model.trim="registerUrl" class="input w-72" placeholder="注册已有 slave: http://127.0.0.1:8101">
               <button class="btn btn-secondary" type="submit">注册</button>
             </form>
-            <button class="btn btn-secondary w-9 px-0" type="button" title="刷新" @click="dashboard.refresh({ refreshRemote: true })">
-              <RefreshCw class="h-4 w-4" aria-hidden="true" />
-            </button>
           </div>
           <div class="flex items-center gap-2">
             <div class="relative">

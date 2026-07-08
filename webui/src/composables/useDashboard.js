@@ -12,6 +12,8 @@ import {
 } from "../api/masterApi";
 import { countByStatus } from "../domain/dashboard";
 
+const DEFAULT_REFRESH_INTERVAL_MS = 3000;
+
 export function useDashboard() {
   const health = ref({ ok: false, workers: 0 });
   const workers = ref([]);
@@ -22,6 +24,7 @@ export function useDashboard() {
   const message = ref("");
   const error = ref("");
   const lastUpdatedAt = ref(null);
+  const refreshIntervalMs = ref(DEFAULT_REFRESH_INTERVAL_MS);
   let timer = null;
 
   const jobCounts = computed(() => countByStatus(jobs.value));
@@ -89,9 +92,13 @@ export function useDashboard() {
     }
   }
 
-  function startPolling() {
+  function startPolling(intervalMs = refreshIntervalMs.value) {
     stopPolling();
-    timer = window.setInterval(() => refresh({ silent: true }), 3000);
+    refreshIntervalMs.value = Number(intervalMs);
+    if (refreshIntervalMs.value <= 0) {
+      return;
+    }
+    timer = window.setInterval(() => refresh({ silent: true }), refreshIntervalMs.value);
   }
 
   function stopPolling() {
@@ -115,6 +122,7 @@ export function useDashboard() {
     message,
     error,
     lastUpdatedAt,
+    refreshIntervalMs,
     refresh,
     createManagedSlave,
     attachSlave,

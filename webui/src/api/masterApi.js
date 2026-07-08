@@ -1,5 +1,17 @@
 import { jsonOptions, request } from "./http";
 
+export function login(payload) {
+  return request("/auth/login", jsonOptions("POST", payload));
+}
+
+export function getCurrentUser() {
+  return request("/auth/me");
+}
+
+export function logout() {
+  return request("/auth/logout", jsonOptions("POST", {}));
+}
+
 export function getHealth() {
   return request("/health");
 }
