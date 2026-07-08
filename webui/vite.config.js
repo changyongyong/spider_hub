@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         "/auth": proxyOptions,
+        "/environments": proxyOptions,
         "/health": proxyOptions,
         "/workers": proxyOptions,
         "/slaves": proxyOptions,

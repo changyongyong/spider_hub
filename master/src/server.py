@@ -173,10 +173,12 @@ def create_app(master: Master) -> FastAPI:
     async def list_workers() -> list[dict[str, Any]]:
         return app.state.master.list_workers()
 
+    @app.get("/slaves/environments", include_in_schema=False)
     @app.get("/environments")
     async def list_environments() -> list[dict[str, Any]]:
         return app.state.master.list_workers()
 
+    @app.post("/slaves/environments", include_in_schema=False)
     @app.post("/environments")
     async def create_environment(request: StartSlaveRequest) -> dict[str, Any]:
         try:
@@ -190,6 +192,7 @@ def create_app(master: Master) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.patch("/slaves/environments/{worker_id}", include_in_schema=False)
     @app.patch("/environments/{worker_id}")
     async def update_environment(worker_id: str, request: StartSlaveRequest) -> dict[str, Any]:
         try:
@@ -205,6 +208,7 @@ def create_app(master: Master) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/slaves/environments/{worker_id}/start", include_in_schema=False)
     @app.post("/environments/{worker_id}/start")
     async def start_environment(worker_id: str) -> dict[str, Any]:
         try:
@@ -214,6 +218,7 @@ def create_app(master: Master) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/slaves/environments/{worker_id}/stop", include_in_schema=False)
     @app.post("/environments/{worker_id}/stop")
     async def stop_environment(worker_id: str) -> dict[str, Any]:
         try:
@@ -221,6 +226,7 @@ def create_app(master: Master) -> FastAPI:
         except KeyError as error:
             raise HTTPException(status_code=404, detail="environment not found") from error
 
+    @app.delete("/slaves/environments/{worker_id}", include_in_schema=False)
     @app.delete("/environments/{worker_id}")
     async def delete_environment(worker_id: str) -> dict[str, Any]:
         try:
