@@ -1,21 +1,30 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { AlertCircle, Boxes, Filter, Loader2, LogOut, Plus, RefreshCw, Search } from "lucide-vue-next";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { AlertCircle, Boxes, Filter, Loader2, LogOut, Play, Plus, RefreshCw, Search, TestTube2 } from "lucide-vue-next";
 import SummaryStrip from "./components/dashboard/SummaryStrip.vue";
 import SlaveEnvironmentForm from "./components/slaves/SlaveEnvironmentForm.vue";
 import WorkerTable from "./components/slaves/WorkerTable.vue";
 import { apiBaseUrl, apiProxyTarget, clearAuthSession, getAuthSession, setAuthSession } from "./api/http";
-import { login, logout } from "./api/masterApi";
+import { fetchUrl, login, logout } from "./api/masterApi";
 import { useDashboard } from "./composables/useDashboard";
 
 const dashboard = useDashboard();
 const mode = ref("list");
+const activeMenu = ref("environments");
 const registerUrl = ref("");
 const selectedEnvironment = ref(null);
 const session = ref(getAuthSession());
 const loginForm = reactive({ username: "", password: "" });
 const loginError = ref("");
 const loginLoading = ref(false);
+const testForm = reactive({
+  url: "",
+  worker_id: "",
+  wait_seconds: 3
+});
+const testLoading = ref(false);
+const testError = ref("");
+const testResult = ref(null);
 const refreshIntervals = [
   { label: "关闭", value: 0 },
   { label: "3 秒", value: 3000 },
@@ -24,6 +33,8 @@ const refreshIntervals = [
   { label: "30 秒", value: 30000 }
 ];
 const apiTarget = apiBaseUrl || apiProxyTarget || "same-origin";
+const runningWorkers = computed(() => dashboard.workers.value.filter((worker) => worker.running));
+const testResultText = computed(() => (testResult.value ? JSON.stringify(testResult.value, null, 2) : ""));
 
 onMounted(async () => {
   window.addEventListener("spider-auth-expired", handleAuthExpired);
@@ -77,6 +88,31 @@ async function toggleEnvironment(worker) {
   await dashboard.startManagedSlave(worker.worker_id);
 }
 
+async function testFetch() {
+  testError.value = "";
+  testResult.value = null;
+  if (!testForm.url.trim()) {
+    testError.value = "请输入要测试的 URL";
+    return;
+  }
+
+  testLoading.value = true;
+  try {
+    testResult.value = await fetchUrl({
+      url: testForm.url.trim(),
+      worker_id: testForm.worker_id || undefined,
+      wait_seconds: Number(testForm.wait_seconds),
+      include_html: false,
+      include_links: true
+    });
+    await dashboard.refresh({ silent: true });
+  } catch (caught) {
+    testError.value = caught.message;
+  } finally {
+    testLoading.value = false;
+  }
+}
+
 async function registerExisting() {
   if (!registerUrl.value.trim()) return;
   await dashboard.attachSlave({ base_url: registerUrl.value.trim() });
@@ -113,6 +149,7 @@ async function signOut() {
   clearAuthSession();
   dashboard.stopPolling();
   mode.value = "list";
+  activeMenu.value = "environments";
   selectedEnvironment.value = null;
   session.value = null;
 }
@@ -120,6 +157,7 @@ async function signOut() {
 function handleAuthExpired() {
   dashboard.stopPolling();
   mode.value = "list";
+  activeMenu.value = "environments";
   selectedEnvironment.value = null;
   session.value = null;
 }
@@ -191,14 +229,28 @@ function handleAuthExpired() {
     <main v-if="mode === 'list'" class="mx-auto grid max-w-[1500px] grid-cols-[168px_minmax(0,1fr)] gap-4 px-4 py-4">
       <aside class="panel self-start p-2">
         <nav class="grid gap-1 text-sm">
-          <button class="flex h-9 items-center gap-2 rounded bg-blue-50 px-3 font-semibold text-blue-600" type="button">
+          <button
+            class="flex h-9 items-center gap-2 rounded px-3"
+            :class="activeMenu === 'environments' ? 'bg-blue-50 font-semibold text-blue-600' : 'text-slate-600 hover:bg-slate-50 hover:text-ink'"
+            type="button"
+            @click="activeMenu = 'environments'"
+          >
             <Boxes class="h-4 w-4" aria-hidden="true" />
             我的环境
+          </button>
+          <button
+            class="flex h-9 items-center gap-2 rounded px-3"
+            :class="activeMenu === 'test' ? 'bg-blue-50 font-semibold text-blue-600' : 'text-slate-600 hover:bg-slate-50 hover:text-ink'"
+            type="button"
+            @click="activeMenu = 'test'"
+          >
+            <TestTube2 class="h-4 w-4" aria-hidden="true" />
+            测试抓取
           </button>
         </nav>
       </aside>
 
-      <div class="grid gap-4">
+      <div v-if="activeMenu === 'environments'" class="grid gap-4">
       <SummaryStrip
         :health="dashboard.health.value"
         :worker-count="dashboard.workers.value.length"
@@ -250,6 +302,51 @@ function handleAuthExpired() {
           />
         </div>
       </section>
+      </div>
+
+      <div v-else class="grid gap-4">
+        <section class="panel">
+          <form class="grid gap-3 border-b border-line px-3 py-3 lg:grid-cols-[minmax(0,1fr)_220px_120px_auto]" @submit.prevent="testFetch">
+            <label class="label gap-1">
+              测试 URL
+              <input v-model.trim="testForm.url" class="input" placeholder="https://example.com" type="url">
+            </label>
+            <label class="label gap-1">
+              环境
+              <select v-model="testForm.worker_id" class="input">
+                <option value="">自动选择运行中环境</option>
+                <option v-for="worker in runningWorkers" :key="worker.worker_id" :value="worker.worker_id">
+                  {{ worker.env_name || worker.config?.env_name || worker.worker_id }}
+                </option>
+              </select>
+            </label>
+            <label class="label gap-1">
+              等待秒数
+              <input v-model="testForm.wait_seconds" class="input" min="0" type="number">
+            </label>
+            <div class="flex items-end">
+              <button class="btn h-9 min-w-24" type="submit" :disabled="testLoading">
+                <Loader2 v-if="testLoading" class="h-4 w-4 animate-spin" aria-hidden="true" />
+                <Play v-else class="h-4 w-4" aria-hidden="true" />
+                测试
+              </button>
+            </div>
+          </form>
+          <div v-if="testError" class="border-b border-line px-3 py-2 text-sm text-red-700">
+            {{ testError }}
+          </div>
+          <div class="grid gap-2 px-3 py-3">
+            <label class="label gap-1">
+              返回信息
+              <textarea
+                class="input h-[calc(100vh-330px)] min-h-80 resize-none py-2 font-mono text-xs leading-5"
+                readonly
+                :value="testResultText"
+                placeholder="测试完成后返回信息会显示在这里"
+              ></textarea>
+            </label>
+          </div>
+        </section>
       </div>
     </main>
   </div>

@@ -167,6 +167,7 @@ function applyEnvironment(environment) {
   form.browser_channel = config.browser_channel || environment.browser_channel || "";
   form.headful = Boolean(config.headful ?? environment.headful ?? false);
   form.challenge_wait = Number(config.challenge_wait ?? environment.challenge_wait ?? 5);
+  form.platform = config.platform || form.platform;
   form.user_agent = config.user_agent || form.user_agent;
   form.locale = config.locale || form.locale;
   form.timezone_id = config.timezone_id || form.timezone_id;
@@ -175,6 +176,19 @@ function applyEnvironment(environment) {
   form.block_images = Boolean(config.block_images);
   form.block_media = Boolean(config.block_media);
   form.cookiesText = Array.isArray(config.cookies) ? JSON.stringify(config.cookies, null, 2) : "";
+  form.startUrl = config.start_url || "";
+  form.webrtc = config.webrtc || form.webrtc;
+  form.canvas = config.canvas || form.canvas;
+  form.webgl_image = config.webgl_image || form.webgl_image;
+  form.webgl_info = config.webgl_info || form.webgl_info;
+  form.webgpu = config.webgpu || form.webgpu;
+  form.audio_context = config.audio_context || form.audio_context;
+  form.speech_voices = config.speech_voices || form.speech_voices;
+  form.media_devices = config.media_devices || form.media_devices;
+  form.hardware_concurrency = Number(config.hardware_concurrency || form.hardware_concurrency);
+  form.device_memory = Number(config.device_memory || form.device_memory);
+  form.do_not_track = config.do_not_track || form.do_not_track;
+  form.port_scan_protection = config.port_scan_protection || form.port_scan_protection;
   form.launchArgsText = Array.isArray(config.launch_args) ? config.launch_args.join("\n") : form.launchArgsText;
   applyProxy(config.proxy || environment.proxy);
 }
@@ -223,6 +237,7 @@ function payload() {
     browser_channel: form.browser_channel || undefined,
     headful: form.headful,
     challenge_wait: Number(form.challenge_wait),
+    platform: form.platform,
     proxy: {
       ...form.proxy,
       port: form.proxy.port ? Number(form.proxy.port) : undefined
@@ -235,7 +250,20 @@ function payload() {
     viewport_height: Number(form.viewport_height),
     block_images: form.block_images,
     block_media: form.block_media,
-    cookies: parseCookies()
+    cookies: parseCookies(),
+    start_url: form.startUrl,
+    webrtc: form.webrtc,
+    canvas: form.canvas,
+    webgl_image: form.webgl_image,
+    webgl_info: form.webgl_info,
+    webgpu: form.webgpu,
+    audio_context: form.audio_context,
+    speech_voices: form.speech_voices,
+    media_devices: form.media_devices,
+    hardware_concurrency: Number(form.hardware_concurrency),
+    device_memory: Number(form.device_memory),
+    do_not_track: form.do_not_track,
+    port_scan_protection: form.port_scan_protection
   };
 }
 

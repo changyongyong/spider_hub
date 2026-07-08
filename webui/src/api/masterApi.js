@@ -17,7 +17,7 @@ export function getHealth() {
 }
 
 export function listWorkers() {
-  return request("/workers");
+  return request("/slaves/environments");
 }
 
 export function refreshSlaves() {
@@ -58,4 +58,8 @@ export function listJobs() {
 
 export function submitJob(payload) {
   return request("/jobs", jsonOptions("POST", payload));
+}
+
+export function fetchUrl(payload) {
+  return request("/fetch", jsonOptions("POST", payload));
 }

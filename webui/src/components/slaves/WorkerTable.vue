@@ -191,7 +191,21 @@ function quickPayload() {
     viewport_height: quickMode.value === "config" ? Number(quickConfig.viewport_height) : config.viewport_height,
     block_images: quickMode.value === "config" ? quickConfig.block_images : Boolean(config.block_images),
     block_media: quickMode.value === "config" ? quickConfig.block_media : Boolean(config.block_media),
-    cookies: []
+    cookies: config.cookies || [],
+    platform: config.platform,
+    start_url: config.start_url,
+    webrtc: config.webrtc,
+    canvas: config.canvas,
+    webgl_image: config.webgl_image,
+    webgl_info: config.webgl_info,
+    webgpu: config.webgpu,
+    audio_context: config.audio_context,
+    speech_voices: config.speech_voices,
+    media_devices: config.media_devices,
+    hardware_concurrency: config.hardware_concurrency,
+    device_memory: config.device_memory,
+    do_not_track: config.do_not_track,
+    port_scan_protection: config.port_scan_protection
   };
 }
 

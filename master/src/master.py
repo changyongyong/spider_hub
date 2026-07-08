@@ -270,18 +270,12 @@ class Master:
 
     def list_workers(self) -> list[dict[str, Any]]:
         result = []
-        seen = set()
         for record in self.environments.values():
             worker = self.workers.get(record.worker_id)
             if worker:
                 result.append(worker.info(saved_config=record.config, saved_status="running"))
             else:
                 result.append(self._environment_info(record))
-            seen.add(record.worker_id)
-
-        for worker in self.workers.values():
-            if worker.worker_id not in seen:
-                result.append(worker.info())
         return result
 
     def list_slaves(self) -> list[dict[str, Any]]:
@@ -399,6 +393,7 @@ class Master:
             challenge_wait=challenge_wait,
             env_config=env_config,
         )
+        self._ensure_unique_env_name(config.get("env_name"), worker_id)
         record = EnvironmentRecord(
             worker_id=worker_id,
             node_id=node_id,
@@ -457,6 +452,7 @@ class Master:
             env_config=env_config,
         )
         preserve_saved_proxy_password(old_record.config, merged_config)
+        self._ensure_unique_env_name(merged_config.get("env_name"), worker_id)
 
         worker = self.workers.get(worker_id)
         if worker:
@@ -557,14 +553,28 @@ class Master:
         challenge_wait: float | None = None,
         env_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        env_config = env_config or {}
+        env_name = env_config.get("env_name")
+        if isinstance(env_name, str):
+            env_config = {**env_config, "env_name": env_name.strip()}
         return {
             **self.env_config,
-            **(env_config or {}),
+            **env_config,
             "worker_id": worker_id,
             "headful": self.headful if headful is None else headful,
             "browser_channel": browser_channel if browser_channel is not None else self.browser_channel,
             "challenge_wait": self.challenge_wait if challenge_wait is None else challenge_wait,
         }
+
+    def _ensure_unique_env_name(self, env_name: str | None, worker_id: str) -> None:
+        if not env_name:
+            return
+        normalized = env_name.strip().lower()
+        for record in self.environments.values():
+            if record.worker_id != worker_id and (record.env_name or "").strip().lower() == normalized:
+                raise ValueError("环境名称已存在，请换一个名称")
+        if self.environment_store.env_name_exists(env_name, exclude_worker_id=worker_id):
+            raise ValueError("环境名称已存在，请换一个名称")
 
     def _environment_info(self, record: EnvironmentRecord) -> dict[str, Any]:
         node = self.nodes.get(record.node_id)

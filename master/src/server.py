@@ -77,6 +77,7 @@ class StartSlaveRequest(BaseModel):
     headful: bool | None = None
     browser_channel: str | None = None
     challenge_wait: float | None = Field(default=None, ge=0)
+    platform: str | None = None
     proxy: ProxyConfigRequest | None = None
     launch_args: list[str] = Field(default_factory=list)
     user_agent: str | None = None
@@ -87,6 +88,19 @@ class StartSlaveRequest(BaseModel):
     block_images: bool = False
     block_media: bool = False
     cookies: list[dict[str, Any]] = Field(default_factory=list)
+    start_url: str | None = None
+    webrtc: str | None = None
+    canvas: str | None = None
+    webgl_image: str | None = None
+    webgl_info: str | None = None
+    webgpu: str | None = None
+    audio_context: str | None = None
+    speech_voices: str | None = None
+    media_devices: str | None = None
+    hardware_concurrency: int | None = Field(default=None, ge=1)
+    device_memory: int | None = Field(default=None, ge=1)
+    do_not_track: str | None = None
+    port_scan_protection: str | None = None
 
 
 def create_app(master: Master) -> FastAPI:
@@ -401,6 +415,7 @@ def slave_env_config(request: StartSlaveRequest) -> dict[str, Any]:
     return {
         "env_name": request.env_name,
         "proxy": proxy_to_playwright(request.proxy),
+        "platform": request.platform,
         "launch_args": request.launch_args,
         "user_agent": request.user_agent,
         "locale": request.locale,
@@ -410,6 +425,19 @@ def slave_env_config(request: StartSlaveRequest) -> dict[str, Any]:
         "block_images": request.block_images,
         "block_media": request.block_media,
         "cookies": request.cookies,
+        "start_url": request.start_url,
+        "webrtc": request.webrtc,
+        "canvas": request.canvas,
+        "webgl_image": request.webgl_image,
+        "webgl_info": request.webgl_info,
+        "webgpu": request.webgpu,
+        "audio_context": request.audio_context,
+        "speech_voices": request.speech_voices,
+        "media_devices": request.media_devices,
+        "hardware_concurrency": request.hardware_concurrency,
+        "device_memory": request.device_memory,
+        "do_not_track": request.do_not_track,
+        "port_scan_protection": request.port_scan_protection,
     }
 
 

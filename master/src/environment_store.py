@@ -84,6 +84,24 @@ class SqliteEnvironmentStore:
             ).fetchone()
             return self._record(row) if row else None
 
+    def env_name_exists(self, env_name: str, exclude_worker_id: str | None = None) -> bool:
+        normalized = env_name.strip().lower()
+        if not normalized:
+            return False
+
+        query = """
+            SELECT 1
+            FROM browser_environments
+            WHERE lower(trim(env_name)) = ?
+        """
+        params: tuple[Any, ...] = (normalized,)
+        if exclude_worker_id:
+            query += " AND worker_id != ?"
+            params = (normalized, exclude_worker_id)
+
+        with self._connect() as connection:
+            return connection.execute(query, params).fetchone() is not None
+
     def save(self, record: EnvironmentRecord) -> EnvironmentRecord:
         config_json = json.dumps(record.config, ensure_ascii=False, separators=(",", ":"))
         with self._connect() as connection:
