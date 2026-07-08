@@ -102,7 +102,7 @@ docker compose up -d --build
 访问：
 
 ```text
-WebUI: http://127.0.0.1:8080/
+WebUI: http://127.0.0.1:8180/
 API:   http://127.0.0.1:8000/docs
 ```
 
@@ -124,7 +124,7 @@ Compose 会启动三个服务：
 
 ```text
 spider-master  后端 master/API，端口 8000，轻量调度端，不安装 Playwright 浏览器
-spider-webui   前端 Vue/Nginx，端口 8080
+spider-webui   前端 Vue/Nginx，端口 8180
 spider-slave  Playwright 采集节点，默认不暴露宿主机端口，使用预装浏览器镜像，单节点可承载多个浏览器，可横向扩容
 ```
 
@@ -163,7 +163,7 @@ docker compose logs -f spider-master
 打开：
 
 ```text
-http://127.0.0.1:8080/
+http://127.0.0.1:8180/
 ```
 
 点击 `新建环境`，可以配置：

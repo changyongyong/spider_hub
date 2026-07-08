@@ -38,7 +38,7 @@ services:
     depends_on:
       - spider-master
     ports:
-      - "8080:80"
+      - "8180:80"
     restart: unless-stopped
 
   spider-slave:
