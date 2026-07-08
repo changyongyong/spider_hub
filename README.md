@@ -52,8 +52,8 @@ docker compose --env-file .env up -d --build
 访问：
 
 ```text
-WebUI: http://127.0.0.1:8180/
-API:   http://127.0.0.1:8180/docs
+WebUI: http://127.0.0.1:8180/  （会跳转到 /ui/）
+API:   http://127.0.0.1:8180/docs  （先登录 WebUI）
 ```
 
 默认账号密码来自 `.env`：
@@ -159,7 +159,7 @@ curl http://127.0.0.1:8180/slaves \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
-WebUI 登录后会自动处理 token。浏览器打开 `/docs` 时使用同源登录 cookie。
+WebUI 登录后会自动处理 token。浏览器打开 `/docs` 前需要先登录 WebUI，登录后会使用同源登录 cookie。
 
 ## 创建 Playwright 环境
 
