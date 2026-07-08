@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref } from "vue";
-import { Edit3, MoreVertical, Network, Power, Settings2, Trash2 } from "lucide-vue-next";
+import { Edit3, Eye, EyeOff, MoreVertical, Network, Power, Settings2, Trash2 } from "lucide-vue-next";
 import { workerStatus } from "../../domain/dashboard";
 import StatusBadge from "../ui/StatusBadge.vue";
 
@@ -18,6 +18,7 @@ const menuPosition = ref({ top: 0, left: 0 });
 const quickMode = ref("");
 const quickWorker = ref(null);
 const quickError = ref("");
+const showQuickProxyPassword = ref(false);
 const quickProxy = reactive({
   enabled: false,
   scheme: "http",
@@ -104,6 +105,7 @@ function openQuickProxy(worker) {
   quickMode.value = "proxy";
   quickWorker.value = worker;
   quickError.value = "";
+  showQuickProxyPassword.value = false;
   fillQuickProxy(worker.config?.proxy || worker.proxy);
 }
 
@@ -165,6 +167,7 @@ function closeQuickEdit() {
   quickMode.value = "";
   quickWorker.value = null;
   quickError.value = "";
+  showQuickProxyPassword.value = false;
 }
 
 function saveQuickEdit() {
@@ -402,18 +405,34 @@ function launchArgs() {
             <input v-model="quickProxy.enabled" class="h-4 w-4" type="checkbox">
             启用代理
           </label>
-          <div class="grid gap-2 md:grid-cols-[120px_minmax(0,1fr)_110px]">
-            <select v-model="quickProxy.scheme" class="input">
+          <div class="grid gap-2 md:grid-cols-8">
+            <select v-model="quickProxy.scheme" class="input md:col-span-2">
               <option value="http">HTTP</option>
               <option value="https">HTTPS</option>
               <option value="socks5">SOCKS5</option>
             </select>
-            <input v-model.trim="quickProxy.host" class="input" placeholder="代理主机">
-            <input v-model="quickProxy.port" class="input" type="number" placeholder="端口">
+            <input v-model.trim="quickProxy.host" class="input md:col-span-4" placeholder="代理主机">
+            <input v-model="quickProxy.port" class="input md:col-span-2" type="number" placeholder="端口">
           </div>
-          <div class="grid gap-2 md:grid-cols-2">
-            <input v-model.trim="quickProxy.username" class="input" placeholder="账号">
-            <input v-model.trim="quickProxy.password" class="input" placeholder="密码" type="password">
+          <div class="grid gap-2 md:grid-cols-8">
+            <input v-model.trim="quickProxy.username" class="input md:col-span-4" placeholder="账号">
+            <span class="relative block w-full md:col-span-4">
+              <button
+                class="absolute inset-y-0 right-2 z-10 flex w-6 items-center justify-center text-muted hover:text-ink"
+                type="button"
+                :title="showQuickProxyPassword ? '隐藏密码' : '查看密码'"
+                @click="showQuickProxyPassword = !showQuickProxyPassword"
+              >
+                <EyeOff v-if="showQuickProxyPassword" class="h-4 w-4" aria-hidden="true" />
+                <Eye v-else class="h-4 w-4" aria-hidden="true" />
+              </button>
+              <input
+                v-model.trim="quickProxy.password"
+                class="input w-full pr-9"
+                placeholder="密码"
+                :type="showQuickProxyPassword ? 'text' : 'password'"
+              >
+            </span>
           </div>
         </div>
 

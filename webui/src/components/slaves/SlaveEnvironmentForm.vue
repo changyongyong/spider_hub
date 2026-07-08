@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowLeft, Monitor } from "lucide-vue-next";
+import { ArrowLeft, Eye, EyeOff, Monitor } from "lucide-vue-next";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 
 const props = defineProps({
@@ -31,6 +31,7 @@ const initializedDefaultName = ref(false);
 const submitted = ref(false);
 const cookiesError = ref("");
 const tipMessage = ref("");
+const showProxyPassword = ref(false);
 let tipTimer = null;
 
 const sections = [
@@ -586,7 +587,7 @@ function updateActiveSection() {
               User Agent
               <input v-model.trim="form.user_agent" class="input max-w-4xl">
             </label>
-            <div class="grid max-w-4xl gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,1.35fr)]">
+            <div class="grid max-w-4xl gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label class="label">
                 语言
                 <input v-model.trim="form.locale" class="input" placeholder="pl-PL">
@@ -596,23 +597,18 @@ function updateActiveSection() {
                 <input v-model.trim="form.timezone_id" class="input" placeholder="Europe/Warsaw">
               </label>
               <label class="label">
-                分辨率
-                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
-                  <label class="grid gap-1">
-                    <span class="flex items-center gap-1 text-xs font-normal text-muted">
-                      宽
-                      <span v-if="viewportWidthError" class="text-red-600">* {{ viewportWidthError }}</span>
-                    </span>
-                    <input v-model="form.viewport_width" class="input" type="number" min="320">
-                  </label>
-                  <label class="grid gap-1">
-                    <span class="flex items-center gap-1 text-xs font-normal text-muted">
-                      高
-                      <span v-if="viewportHeightError" class="text-red-600">* {{ viewportHeightError }}</span>
-                    </span>
-                    <input v-model="form.viewport_height" class="input" type="number" min="240">
-                  </label>
-                </div>
+                <span class="flex items-center gap-1">
+                  分辨率宽
+                  <span v-if="viewportWidthError" class="text-xs font-normal text-red-600">* {{ viewportWidthError }}</span>
+                </span>
+                <input v-model="form.viewport_width" class="input" type="number" min="320">
+              </label>
+              <label class="label">
+                <span class="flex items-center gap-1">
+                  分辨率高
+                  <span v-if="viewportHeightError" class="text-xs font-normal text-red-600">* {{ viewportHeightError }}</span>
+                </span>
+                <input v-model="form.viewport_height" class="input" type="number" min="240">
               </label>
             </div>
           </section>
@@ -628,8 +624,8 @@ function updateActiveSection() {
                 <button :class="buttonClass(form.proxy.enabled, true)" type="button" @click="form.proxy.enabled = true">自定义</button>
               </div>
             </div>
-            <div class="grid max-w-4xl gap-4 md:grid-cols-[180px_1fr_160px]">
-              <label class="label">
+            <div class="grid max-w-[850px] gap-4 md:grid-cols-[130px_260px_140px_260px]">
+              <label class="label md:col-span-1">
                 代理类型 *
                 <select v-model="form.proxy.scheme" class="input">
                   <option value="http">HTTP</option>
@@ -637,29 +633,42 @@ function updateActiveSection() {
                   <option value="socks5">SOCKS5</option>
                 </select>
               </label>
-              <label class="label">
+              <label class="label md:col-span-1">
                 <span class="flex items-center gap-2">
                   代理主机 *
                   <span v-if="proxyHostError" class="text-xs font-normal text-red-600">* {{ proxyHostError }}</span>
                 </span>
                 <input v-model.trim="form.proxy.host" class="input" placeholder="请输入 IP 地址或域名">
               </label>
-              <label class="label">
+              <label class="label md:col-span-1">
                 <span class="flex items-center gap-2">
                   代理端口 *
                   <span v-if="proxyPortError" class="text-xs font-normal text-red-600">* {{ proxyPortError }}</span>
                 </span>
                 <input v-model="form.proxy.port" class="input" type="number" placeholder="端口号">
               </label>
-            </div>
-            <div class="grid max-w-4xl gap-4 md:grid-cols-2">
-              <label class="label">
+              <label class="label md:col-span-2">
                 代理账号
                 <input v-model.trim="form.proxy.username" class="input">
               </label>
-              <label class="label">
+              <label class="label md:col-span-2">
                 代理密码
-                <input v-model.trim="form.proxy.password" class="input" type="password">
+                <span class="relative block w-full">
+                  <button
+                    class="absolute inset-y-0 right-2 z-10 flex w-6 items-center justify-center text-muted hover:text-ink"
+                    type="button"
+                    :title="showProxyPassword ? '隐藏密码' : '查看密码'"
+                    @click="showProxyPassword = !showProxyPassword"
+                  >
+                    <EyeOff v-if="showProxyPassword" class="h-4 w-4" aria-hidden="true" />
+                    <Eye v-else class="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <input
+                    v-model.trim="form.proxy.password"
+                    class="input w-full pr-9"
+                    :type="showProxyPassword ? 'text' : 'password'"
+                  >
+                </span>
               </label>
             </div>
           </section>
