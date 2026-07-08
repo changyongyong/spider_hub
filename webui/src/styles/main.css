@@ -47,7 +47,11 @@
     @apply bg-slate-50 text-left text-xs font-semibold text-muted;
   }
 
+  .table-head th {
+    @apply sticky top-0 z-20 bg-slate-50;
+  }
+
   .table-cell {
-    @apply border-b border-line px-3 py-3 align-top text-sm;
+    @apply border-b border-line px-2.5 py-2 align-middle text-sm;
   }
 }

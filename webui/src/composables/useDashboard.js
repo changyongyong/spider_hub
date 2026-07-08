@@ -8,6 +8,9 @@ import {
   refreshSlaves,
   registerSlave,
   createBrowserEnvironment,
+  startBrowserEnvironment,
+  stopBrowserEnvironment,
+  updateBrowserEnvironment,
   submitJob
 } from "../api/masterApi";
 import { countByStatus } from "../domain/dashboard";
@@ -59,7 +62,19 @@ export function useDashboard() {
   }
 
   async function createManagedSlave(payload) {
-    return runAction("正在创建 Playwright 环境...", () => createBrowserEnvironment(payload), true);
+    return runAction("正在保存 Playwright 环境...", () => createBrowserEnvironment(payload), true);
+  }
+
+  async function updateManagedSlave(workerId, payload) {
+    return runAction("正在保存 Playwright 环境...", () => updateBrowserEnvironment(workerId, payload), true);
+  }
+
+  async function startManagedSlave(workerId) {
+    return runAction(`正在启动 ${workerId}...`, () => startBrowserEnvironment(workerId), true);
+  }
+
+  async function stopManagedSlave(workerId) {
+    return runAction(`正在关闭 ${workerId}...`, () => stopBrowserEnvironment(workerId), true);
   }
 
   async function attachSlave(payload) {
@@ -125,6 +140,9 @@ export function useDashboard() {
     refreshIntervalMs,
     refresh,
     createManagedSlave,
+    updateManagedSlave,
+    startManagedSlave,
+    stopManagedSlave,
     attachSlave,
     removeWorker,
     createJob,

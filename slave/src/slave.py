@@ -127,6 +127,25 @@ class SlaveRuntime:
             raise RuntimeError("playwright is not running")
 
         worker_id = request.worker_id or f"env-{uuid.uuid4().hex[:8]}"
+        worker = await self.start_worker(worker_id, request)
+        self.workers[worker_id] = worker
+        return worker.info()
+
+    async def update_environment(self, worker_id: str, request: BrowserEnvironmentRequest) -> dict[str, Any]:
+        old_worker = self.workers[worker_id]
+        if not self.playwright:
+            await self.start()
+        if not self.playwright:
+            raise RuntimeError("playwright is not running")
+
+        request.worker_id = worker_id
+        preserve_existing_config(old_worker, request)
+        new_worker = await self.start_worker(worker_id, request)
+        await old_worker.stop()
+        self.workers[worker_id] = new_worker
+        return new_worker.info()
+
+    async def start_worker(self, worker_id: str, request: BrowserEnvironmentRequest) -> TaskWorker:
         config = WorkerConfig(
             worker_id=worker_id,
             proxy=request.proxy,
@@ -146,8 +165,7 @@ class SlaveRuntime:
         )
         worker = TaskWorker(self.playwright, config)
         await worker.start()
-        self.workers[worker_id] = worker
-        return worker.info()
+        return worker
 
     async def stop(self) -> None:
         for worker in list(self.workers.values()):
@@ -236,6 +254,20 @@ class SlaveRuntime:
                 await asyncio.sleep(5)
 
 
+def preserve_existing_config(old_worker: TaskWorker, request: BrowserEnvironmentRequest) -> None:
+    old_config = old_worker.config
+    if not request.cookies and old_config.cookies:
+        request.cookies = old_config.cookies
+
+    if request.proxy and old_config.proxy:
+        old_server = old_config.proxy.get("server")
+        if request.proxy.get("server") == old_server:
+            if "username" not in request.proxy and old_config.proxy.get("username"):
+                request.proxy["username"] = old_config.proxy["username"]
+            if "password" not in request.proxy and old_config.proxy.get("password"):
+                request.proxy["password"] = old_config.proxy["password"]
+
+
 def create_app(runtime: SlaveRuntime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -275,6 +307,15 @@ def create_app(runtime: SlaveRuntime) -> FastAPI:
     async def create_environment(request: BrowserEnvironmentRequest) -> dict[str, Any]:
         try:
             return await app.state.runtime.create_environment(request)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.patch("/environments/{worker_id}")
+    async def update_environment(worker_id: str, request: BrowserEnvironmentRequest) -> dict[str, Any]:
+        try:
+            return await app.state.runtime.update_environment(worker_id, request)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 

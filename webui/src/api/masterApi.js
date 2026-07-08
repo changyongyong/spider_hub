@@ -33,11 +33,23 @@ export function registerSlave(payload) {
 }
 
 export function createBrowserEnvironment(payload) {
-  return request("/slaves/start", jsonOptions("POST", payload));
+  return request("/environments", jsonOptions("POST", payload));
+}
+
+export function updateBrowserEnvironment(workerId, payload) {
+  return request(`/environments/${encodeURIComponent(workerId)}`, jsonOptions("PATCH", payload));
+}
+
+export function startBrowserEnvironment(workerId) {
+  return request(`/environments/${encodeURIComponent(workerId)}/start`, jsonOptions("POST", {}));
+}
+
+export function stopBrowserEnvironment(workerId) {
+  return request(`/environments/${encodeURIComponent(workerId)}/stop`, jsonOptions("POST", {}));
 }
 
 export function deleteWorker(workerId) {
-  return request(`/workers/${encodeURIComponent(workerId)}`, { method: "DELETE" });
+  return request(`/environments/${encodeURIComponent(workerId)}`, { method: "DELETE" });
 }
 
 export function listJobs() {

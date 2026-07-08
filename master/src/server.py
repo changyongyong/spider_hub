@@ -21,6 +21,7 @@ API_PATH_PREFIXES = (
     "/auth/me",
     "/auth/logout",
     "/health",
+    "/environments",
     "/workers",
     "/slaves",
     "/slavers",
@@ -172,6 +173,61 @@ def create_app(master: Master) -> FastAPI:
     async def list_workers() -> list[dict[str, Any]]:
         return app.state.master.list_workers()
 
+    @app.get("/environments")
+    async def list_environments() -> list[dict[str, Any]]:
+        return app.state.master.list_workers()
+
+    @app.post("/environments")
+    async def create_environment(request: StartSlaveRequest) -> dict[str, Any]:
+        try:
+            return await app.state.master.save_browser_environment(
+                node_id=request.node_id,
+                headful=request.headful,
+                browser_channel=request.browser_channel,
+                challenge_wait=request.challenge_wait,
+                env_config=slave_env_config(request),
+            )
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.patch("/environments/{worker_id}")
+    async def update_environment(worker_id: str, request: StartSlaveRequest) -> dict[str, Any]:
+        try:
+            return await app.state.master.update_browser_environment(
+                worker_id=worker_id,
+                headful=request.headful,
+                browser_channel=request.browser_channel,
+                challenge_wait=request.challenge_wait,
+                env_config=slave_env_config(request),
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/environments/{worker_id}/start")
+    async def start_environment(worker_id: str) -> dict[str, Any]:
+        try:
+            return await app.state.master.start_browser_environment(worker_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/environments/{worker_id}/stop")
+    async def stop_environment(worker_id: str) -> dict[str, Any]:
+        try:
+            return await app.state.master.stop_worker(worker_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+
+    @app.delete("/environments/{worker_id}")
+    async def delete_environment(worker_id: str) -> dict[str, Any]:
+        try:
+            return await app.state.master.delete_browser_environment(worker_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="environment not found") from error
+
     @app.get("/slavers", include_in_schema=False)
     @app.get("/slaves")
     async def list_slaves(refresh: bool = False) -> list[dict[str, Any]]:
@@ -247,6 +303,21 @@ def create_app(master: Master) -> FastAPI:
             return await app.state.master.stop_worker(worker_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail="worker not found") from error
+
+    @app.patch("/workers/{worker_id}")
+    async def update_worker(worker_id: str, request: StartSlaveRequest) -> dict[str, Any]:
+        try:
+            return await app.state.master.update_browser_environment(
+                worker_id=worker_id,
+                headful=request.headful,
+                browser_channel=request.browser_channel,
+                challenge_wait=request.challenge_wait,
+                env_config=slave_env_config(request),
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="worker not found") from error
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.delete("/workers")
     async def stop_all_workers() -> dict[str, Any]:

@@ -168,7 +168,7 @@ class TaskWorker:
     def config_public(self) -> dict[str, Any]:
         return {
             "env_name": self.config.env_name,
-            "proxy": proxy_label(self.config.proxy),
+            "proxy": proxy_public(self.config.proxy),
             "headful": self.config.headful,
             "browser_channel": self.config.browser_channel,
             "challenge_wait": self.config.challenge_wait,
@@ -182,3 +182,33 @@ class TaskWorker:
             "block_media": self.config.block_media,
             "cookies_count": len(self.config.cookies),
         }
+
+
+def proxy_public(proxy: dict[str, str] | None) -> dict[str, Any]:
+    if not proxy:
+        return {"enabled": False}
+
+    result: dict[str, Any] = {
+        "enabled": True,
+        "server": proxy.get("server", ""),
+        "username": proxy.get("username", ""),
+        "password_set": bool(proxy.get("password")),
+    }
+    scheme, host, port = parse_proxy_server(result["server"])
+    result.update({"scheme": scheme, "host": host, "port": port})
+    return result
+
+
+def parse_proxy_server(server: str) -> tuple[str, str, int | None]:
+    if "://" not in server:
+        return "http", "", None
+
+    scheme, rest = server.split("://", 1)
+    if ":" not in rest:
+        return scheme, rest, None
+
+    host, port_text = rest.rsplit(":", 1)
+    try:
+        return scheme, host, int(port_text)
+    except ValueError:
+        return scheme, host, None

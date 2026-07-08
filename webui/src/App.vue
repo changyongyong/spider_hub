@@ -11,6 +11,7 @@ import { useDashboard } from "./composables/useDashboard";
 const dashboard = useDashboard();
 const mode = ref("list");
 const registerUrl = ref("");
+const selectedEnvironment = ref(null);
 const session = ref(getAuthSession());
 const loginForm = reactive({ username: "", password: "" });
 const loginError = ref("");
@@ -37,13 +38,43 @@ onBeforeUnmount(() => {
 });
 
 async function createEnvironment(payload) {
-  await dashboard.createManagedSlave(payload);
+  if (mode.value === "edit" && selectedEnvironment.value) {
+    await dashboard.updateManagedSlave(selectedEnvironment.value.worker_id, payload);
+  } else {
+    await dashboard.createManagedSlave(payload);
+  }
+  selectedEnvironment.value = null;
   mode.value = "list";
 }
 
 async function openCreateEnvironment() {
   await dashboard.refresh({ refreshRemote: true, silent: true });
+  selectedEnvironment.value = null;
   mode.value = "create";
+}
+
+async function openEditEnvironment(worker) {
+  const workerId = worker.worker_id;
+  await dashboard.refresh({ refreshRemote: true, silent: true });
+  selectedEnvironment.value = dashboard.workers.value.find((item) => item.worker_id === workerId) || worker;
+  mode.value = "edit";
+}
+
+function closeEnvironmentForm() {
+  selectedEnvironment.value = null;
+  mode.value = "list";
+}
+
+async function saveQuickEnvironment({ workerId, payload }) {
+  await dashboard.updateManagedSlave(workerId, payload);
+}
+
+async function toggleEnvironment(worker) {
+  if (worker.running) {
+    await dashboard.stopManagedSlave(worker.worker_id);
+    return;
+  }
+  await dashboard.startManagedSlave(worker.worker_id);
 }
 
 async function registerExisting() {
@@ -82,22 +113,26 @@ async function signOut() {
   clearAuthSession();
   dashboard.stopPolling();
   mode.value = "list";
+  selectedEnvironment.value = null;
   session.value = null;
 }
 
 function handleAuthExpired() {
   dashboard.stopPolling();
   mode.value = "list";
+  selectedEnvironment.value = null;
   session.value = null;
 }
 </script>
 
 <template>
   <SlaveEnvironmentForm
-    v-if="session && mode === 'create'"
+    v-if="session && (mode === 'create' || mode === 'edit')"
     :nodes="dashboard.slaves.value"
     :error="dashboard.error.value"
-    @cancel="mode = 'list'"
+    :environment="selectedEnvironment"
+    :mode="mode"
+    @cancel="closeEnvironmentForm"
     @submit="createEnvironment"
   />
 
@@ -127,11 +162,11 @@ function handleAuthExpired() {
   </div>
 
   <div v-else class="min-h-screen">
-    <header class="border-b border-line bg-white px-6 py-3">
+    <header class="border-b border-line bg-white px-5 py-2">
       <div class="mx-auto flex max-w-[1500px] flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 class="text-xl font-semibold text-ink">Spider Master Console</h1>
-          <p class="mt-1 text-sm text-muted">Slave 环境列表和浏览器启动环境管理。API: {{ apiTarget }}</p>
+          <h1 class="text-lg font-semibold text-ink">Spider Master Console</h1>
+          <p class="mt-0.5 text-xs text-muted">Slave 环境列表和浏览器启动环境管理。API: {{ apiTarget }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 text-sm text-muted">
           <span>{{ session.username }}</span>
@@ -153,17 +188,17 @@ function handleAuthExpired() {
       </div>
     </header>
 
-    <main v-if="mode === 'list'" class="mx-auto grid max-w-[1500px] grid-cols-[180px_minmax(0,1fr)] gap-5 px-5 py-5">
-      <aside class="panel min-h-[calc(100vh-112px)] p-3">
+    <main v-if="mode === 'list'" class="mx-auto grid max-w-[1500px] grid-cols-[168px_minmax(0,1fr)] gap-4 px-4 py-4">
+      <aside class="panel self-start p-2">
         <nav class="grid gap-1 text-sm">
-          <button class="flex h-10 items-center gap-2 rounded bg-blue-50 px-3 font-semibold text-blue-600" type="button">
+          <button class="flex h-9 items-center gap-2 rounded bg-blue-50 px-3 font-semibold text-blue-600" type="button">
             <Boxes class="h-4 w-4" aria-hidden="true" />
             我的环境
           </button>
         </nav>
       </aside>
 
-      <div class="grid gap-5">
+      <div class="grid gap-4">
       <SummaryStrip
         :health="dashboard.health.value"
         :worker-count="dashboard.workers.value.length"
@@ -183,7 +218,7 @@ function handleAuthExpired() {
       </div>
 
       <section class="panel">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-3 py-3">
           <div class="flex flex-wrap items-center gap-2">
             <button class="btn bg-blue-600 hover:bg-blue-700" type="button" @click="openCreateEnvironment">
               <Plus class="h-4 w-4" aria-hidden="true" />
@@ -205,8 +240,14 @@ function handleAuthExpired() {
             </button>
           </div>
         </div>
-        <div class="p-4">
-          <WorkerTable :workers="dashboard.workers.value" @delete="dashboard.removeWorker" />
+        <div class="p-3">
+          <WorkerTable
+            :workers="dashboard.workers.value"
+            @delete="dashboard.removeWorker"
+            @edit="openEditEnvironment"
+            @quick-save="saveQuickEnvironment"
+            @toggle="toggleEnvironment"
+          />
         </div>
       </section>
       </div>

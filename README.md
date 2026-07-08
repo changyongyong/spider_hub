@@ -104,6 +104,7 @@ $env:SPIDER_MASTER_USERNAME="admin"
 $env:SPIDER_MASTER_PASSWORD="admin"
 $env:SPIDER_SESSION_SECRET="dev-session-secret"
 $env:SPIDER_INTERNAL_API_TOKEN="dev-internal-token"
+$env:SPIDER_SQLITE_PATH="data/spider.db"
 pip install -r requirements.txt
 python -m src.server
 ```
@@ -171,7 +172,7 @@ http://127.0.0.1:8180/
 
 点击 `新建环境`，选择目标 slave node，然后配置浏览器、代理、UA、语言、时区、分辨率、cookies 和 Chromium 启动参数。
 
-master 不自动分配环境落点，创建环境时需要手动选择 slave node。
+master 不自动分配环境落点，创建环境时需要手动选择 slave node。环境配置会保存到 SQLite，创建后默认不启动；在环境列表中使用电源开关手动启动或关闭。
 
 ## 提交采集任务
 

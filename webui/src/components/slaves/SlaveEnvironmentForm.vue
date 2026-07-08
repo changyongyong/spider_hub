@@ -1,6 +1,6 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
-import { ArrowLeft, ChevronDown, Monitor } from "lucide-vue-next";
+import { computed, reactive, ref, watch } from "vue";
+import { ArrowLeft, Monitor } from "lucide-vue-next";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 
 const props = defineProps({
@@ -11,6 +11,14 @@ const props = defineProps({
   error: {
     type: String,
     default: ""
+  },
+  environment: {
+    type: Object,
+    default: null
+  },
+  mode: {
+    type: String,
+    default: "create"
   }
 });
 
@@ -23,7 +31,7 @@ const sections = [
   { key: "advanced", label: "高级设置" }
 ];
 
-const activeSection = ref("basic");
+const localError = ref("");
 const form = reactive({
   node_id: "",
   env_name: "新建环境",
@@ -85,6 +93,25 @@ const preview = computed(() => [
   ["Do Not Track", labelOf(form.do_not_track)],
   ["端口扫描保护", form.port_scan_protection === "on" ? "开启" : "关闭"]
 ]);
+const visibleError = computed(() => localError.value || props.error);
+const isEditing = computed(() => props.mode === "edit");
+const pageTitle = computed(() => (isEditing.value ? "编辑环境" : "新建环境"));
+const submitHint = computed(() => {
+  if (!form.env_name.trim()) return "请先填写环境名称";
+  if (!form.node_id) return "请选择一个可用的 slave 节点";
+  if (form.proxy.enabled && (!form.proxy.host || !form.proxy.port)) return "代理已启用，请填写代理主机和端口";
+  return "";
+});
+
+watch(
+  () => props.environment,
+  (environment) => {
+    if (environment) {
+      applyEnvironment(environment);
+    }
+  },
+  { immediate: true }
+);
 
 function browserLabel(value) {
   if (value === "chrome") return "Chrome";
@@ -122,7 +149,7 @@ function parseCookies() {
     const parsed = JSON.parse(text);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [];
+    throw new Error("Cookie 必须是 Playwright cookies JSON 数组");
   }
 }
 
@@ -131,6 +158,62 @@ function launchArgs() {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function applyEnvironment(environment) {
+  const config = environment.config || {};
+  form.node_id = environment.node_id || "";
+  form.env_name = environment.env_name || config.env_name || environment.worker_id || "新建环境";
+  form.browser_channel = config.browser_channel || environment.browser_channel || "";
+  form.headful = Boolean(config.headful ?? environment.headful ?? false);
+  form.challenge_wait = Number(config.challenge_wait ?? environment.challenge_wait ?? 5);
+  form.user_agent = config.user_agent || form.user_agent;
+  form.locale = config.locale || form.locale;
+  form.timezone_id = config.timezone_id || form.timezone_id;
+  form.viewport_width = Number(config.viewport_width || form.viewport_width);
+  form.viewport_height = Number(config.viewport_height || form.viewport_height);
+  form.block_images = Boolean(config.block_images);
+  form.block_media = Boolean(config.block_media);
+  form.cookiesText = Array.isArray(config.cookies) ? JSON.stringify(config.cookies, null, 2) : "";
+  form.launchArgsText = Array.isArray(config.launch_args) ? config.launch_args.join("\n") : form.launchArgsText;
+  applyProxy(config.proxy || environment.proxy);
+}
+
+function applyProxy(proxy) {
+  if (!proxy || proxy === "direct" || proxy === "直连" || proxy.enabled === false) {
+    form.proxy.enabled = false;
+    form.proxy.host = "";
+    form.proxy.port = "";
+    form.proxy.username = "";
+    form.proxy.password = "";
+    return;
+  }
+
+  if (typeof proxy === "object") {
+    const parsed = parseProxyServer(proxy.server || "");
+    form.proxy.enabled = true;
+    form.proxy.scheme = proxy.scheme || parsed.scheme || "http";
+    form.proxy.host = proxy.host || parsed.host || "";
+    form.proxy.port = proxy.port ? String(proxy.port) : parsed.port || "";
+    form.proxy.username = proxy.username || "";
+    form.proxy.password = proxy.password || "";
+    return;
+  }
+
+  const match = String(proxy).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
+  if (!match) return;
+  form.proxy.enabled = true;
+  form.proxy.scheme = match[1];
+  form.proxy.host = match[2];
+  form.proxy.port = match[3];
+  form.proxy.username = "";
+  form.proxy.password = "";
+}
+
+function parseProxyServer(server) {
+  const match = String(server).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
+  if (!match) return { scheme: "", host: "", port: "" };
+  return { scheme: match[1], host: match[2], port: match[3] };
 }
 
 function payload() {
@@ -157,6 +240,32 @@ function payload() {
 }
 
 function submit() {
+  localError.value = "";
+  if (!form.env_name.trim()) {
+    localError.value = "请填写环境名称";
+    return;
+  }
+  if (!form.node_id) {
+    localError.value = "请选择 slave 节点";
+    return;
+  }
+  if (form.proxy.enabled && (!form.proxy.host || !form.proxy.port)) {
+    localError.value = "启用代理时必须填写代理主机和端口";
+    return;
+  }
+  if (form.proxy.enabled) {
+    const port = Number(form.proxy.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      localError.value = "代理端口必须是 1-65535 的整数";
+      return;
+    }
+  }
+  try {
+    parseCookies();
+  } catch (caught) {
+    localError.value = caught.message;
+    return;
+  }
   emit("submit", payload());
 }
 
@@ -165,45 +274,47 @@ function nodeLabel(node) {
   const total = node.max_environments ?? node.max_workers ?? "-";
   return `${node.node_id} (${node.base_url}, ${slots}/${total} 可用)`;
 }
+
+function scrollToSection(key) {
+  document.getElementById(`env-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 </script>
 
 <template>
   <div class="min-h-screen bg-white">
-    <div class="flex h-14 items-center border-b border-line px-5">
+    <div class="flex h-14 items-center justify-between border-b border-line px-5">
       <button class="inline-flex items-center gap-1 text-sm text-muted hover:text-ink" type="button" @click="emit('cancel')">
         <ArrowLeft class="h-4 w-4" aria-hidden="true" />
         返回
       </button>
+      <h1 class="text-base font-semibold text-ink">{{ pageTitle }}</h1>
+      <div class="w-12"></div>
     </div>
 
-    <div class="flex h-[calc(100vh-56px)]">
-      <aside class="w-36 border-r border-line px-4 py-5">
-        <div class="mb-5 flex gap-5 text-sm">
-          <span class="inline-flex items-center gap-1 border-b-2 border-blue-500 pb-2 font-semibold text-blue-600">
-            <Monitor class="h-4 w-4" aria-hidden="true" />
-            浏览器
-          </span>
-        </div>
+    <div class="grid h-[calc(100vh-56px)] grid-cols-[150px_minmax(0,1fr)] overflow-hidden">
+      <aside class="border-r border-line px-3 py-5">
         <nav class="grid gap-1 text-sm">
           <button
             v-for="section in sections"
             :key="section.key"
-            class="border-l-2 px-3 py-2 text-left"
-            :class="activeSection === section.key ? 'border-blue-500 font-semibold text-ink' : 'border-transparent text-slate-600 hover:bg-slate-50'"
+            class="rounded px-3 py-2 text-left text-slate-600 hover:bg-slate-50 hover:text-ink"
             type="button"
-            @click="activeSection = section.key"
+            @click="scrollToSection(section.key)"
           >
             {{ section.label }}
           </button>
         </nav>
       </aside>
 
-      <main class="grid flex-1 grid-cols-[minmax(0,1fr)_360px] overflow-hidden">
-        <form class="overflow-y-auto px-7 py-6" @submit.prevent="submit">
-          <section v-show="activeSection === 'basic'" class="grid gap-5">
+      <main class="grid h-full grid-cols-[minmax(0,1fr)_360px] overflow-hidden">
+        <form class="overflow-y-auto px-7 py-6" novalidate @submit.prevent="submit">
+          <section id="env-basic" class="scroll-mt-4 grid gap-5 border-b border-line pb-7">
             <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
-              基础设置
-              <ChevronDown class="h-4 w-4 text-muted" aria-hidden="true" />
+              <span class="inline-flex items-center gap-2">
+                <Monitor class="h-4 w-4 text-muted" aria-hidden="true" />
+                基础设置
+              </span>
+              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
               环境名称 *
@@ -211,13 +322,12 @@ function nodeLabel(node) {
             </label>
             <label class="label max-w-4xl">
               Slave 节点 *
-              <select v-model="form.node_id" class="input" required>
+              <select v-model="form.node_id" class="input" :disabled="isEditing" required>
                 <option value="" disabled>请选择承载该 Playwright 环境的 slave 节点</option>
                 <option
                   v-for="node in props.nodes"
                   :key="node.node_id"
                   :value="node.node_id"
-                  :disabled="node.available_slots === 0"
                 >
                   {{ nodeLabel(node) }}
                 </option>
@@ -226,8 +336,8 @@ function nodeLabel(node) {
             <div v-if="props.nodes.length === 0" class="max-w-4xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               当前没有可用 slave 节点。请先启动或注册 slave 节点，再创建 Playwright 环境。
             </div>
-            <div v-if="props.error" class="max-w-4xl rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {{ props.error }}
+            <div v-if="visibleError" class="max-w-4xl rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {{ visibleError }}
             </div>
             <div class="grid max-w-4xl gap-4 md:grid-cols-2">
               <label class="label">
@@ -278,10 +388,10 @@ function nodeLabel(node) {
             </div>
           </section>
 
-          <section v-show="activeSection === 'proxy'" class="grid gap-5">
+          <section id="env-proxy" class="scroll-mt-4 grid gap-5 border-b border-line py-7">
             <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
               代理信息
-              <ChevronDown class="h-4 w-4 text-muted" aria-hidden="true" />
+              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <div class="grid gap-2">
               <span class="text-sm text-muted">代理方式</span>
@@ -320,10 +430,10 @@ function nodeLabel(node) {
             </div>
           </section>
 
-          <section v-show="activeSection === 'account'" class="grid gap-5">
+          <section id="env-account" class="scroll-mt-4 grid gap-5 border-b border-line py-7">
             <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
               账号信息
-              <ChevronDown class="h-4 w-4 text-muted" aria-hidden="true" />
+              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
               Cookie
@@ -335,10 +445,10 @@ function nodeLabel(node) {
             </label>
           </section>
 
-          <section v-show="activeSection === 'advanced'" class="grid gap-5 pb-24">
+          <section id="env-advanced" class="scroll-mt-4 grid gap-5 pb-24 pt-7">
             <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
               高级设置
-              <ChevronDown class="h-4 w-4 text-muted" aria-hidden="true" />
+              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <div class="grid gap-4 md:grid-cols-2">
               <SegmentedControl v-model="form.webrtc" label="WebRTC" :options="[['hide','隐藏'],['replace','替换'],['real','真实'],['disable','禁用']]" />
@@ -376,8 +486,9 @@ function nodeLabel(node) {
           </section>
 
           <footer class="fixed bottom-0 left-0 right-0 flex h-14 items-center gap-2 border-t border-line bg-white px-5">
-            <button class="btn min-w-24" type="submit" :disabled="!form.node_id">完成</button>
+            <button class="btn min-w-24" type="submit">完成</button>
             <button class="btn btn-secondary min-w-20" type="button" @click="emit('cancel')">取消</button>
+            <span v-if="submitHint" class="text-sm text-muted">{{ submitHint }}</span>
           </footer>
         </form>
 
