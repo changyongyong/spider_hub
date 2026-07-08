@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -201,18 +202,88 @@ def raise_for_status(response: httpx.Response) -> None:
 
 
 def preserve_saved_proxy_password(old_config: dict[str, Any], new_config: dict[str, Any]) -> None:
-    old_proxy = old_config.get("proxy")
-    new_proxy = new_config.get("proxy")
+    old_proxy = normalize_proxy_config(old_config.get("proxy"))
+    new_proxy = normalize_proxy_config(new_config.get("proxy"))
     if not isinstance(old_proxy, dict) or not isinstance(new_proxy, dict):
         return
     if new_proxy.get("password") or old_proxy.get("server") != new_proxy.get("server"):
         return
     if old_proxy.get("password"):
         new_proxy["password"] = old_proxy["password"]
+        new_config["proxy"] = new_proxy
+
+
+def normalize_proxy_config(proxy: Any) -> dict[str, Any]:
+    if not proxy or proxy == "direct" or proxy == "直连":
+        return {"enabled": False}
+
+    if isinstance(proxy, str):
+        parsed = parse_proxy_server(proxy)
+        if not parsed:
+            return {"enabled": False}
+        return parsed
+
+    if not isinstance(proxy, dict):
+        return {"enabled": False}
+
+    if proxy.get("enabled") is False:
+        return {"enabled": False}
+
+    parsed = parse_proxy_server(proxy.get("server"))
+    scheme = proxy.get("scheme") or parsed.get("scheme") or "http"
+    host = proxy.get("host") or parsed.get("host")
+    port = proxy.get("port") or parsed.get("port")
+    if not host or not port:
+        return {"enabled": False}
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return {"enabled": False}
+
+    result: dict[str, Any] = {
+        "enabled": True,
+        "scheme": scheme,
+        "host": host,
+        "port": port,
+        "server": f"{scheme}://{host}:{port}",
+    }
+    username = proxy.get("username") or parsed.get("username")
+    password = proxy.get("password") or parsed.get("password")
+    if username:
+        result["username"] = username
+    if password:
+        result["password"] = password
+    return result
+
+
+def parse_proxy_server(server: Any) -> dict[str, Any]:
+    if not server:
+        return {}
+    parsed = urlsplit(str(server))
+    try:
+        port = parsed.port
+    except ValueError:
+        return {}
+    if parsed.scheme not in {"http", "https", "socks5"} or not parsed.hostname or not port:
+        return {}
+
+    result: dict[str, Any] = {
+        "enabled": True,
+        "scheme": parsed.scheme,
+        "host": parsed.hostname,
+        "port": port,
+        "server": f"{parsed.scheme}://{parsed.hostname}:{port}",
+    }
+    if parsed.username:
+        result["username"] = unquote(parsed.username)
+    if parsed.password:
+        result["password"] = unquote(parsed.password)
+    return result
 
 
 def proxy_for_runtime(proxy: dict[str, Any] | None) -> dict[str, str] | None:
-    if not proxy or proxy.get("enabled") is False:
+    proxy = normalize_proxy_config(proxy)
+    if proxy.get("enabled") is False:
         return None
 
     server = proxy.get("server")
@@ -256,7 +327,7 @@ class Master:
     async def start(self) -> None:
         self.environment_store.initialize()
         self.environments = {
-            record.worker_id: record
+            record.worker_id: self._normalized_record(record)
             for record in self.environment_store.list()
         }
 
@@ -576,7 +647,7 @@ class Master:
         env_name = env_config.get("env_name")
         if isinstance(env_name, str):
             env_config = {**env_config, "env_name": env_name.strip()}
-        return {
+        config = {
             **self.env_config,
             **env_config,
             "worker_id": worker_id,
@@ -584,6 +655,8 @@ class Master:
             "browser_channel": browser_channel if browser_channel is not None else self.browser_channel,
             "challenge_wait": self.challenge_wait if challenge_wait is None else challenge_wait,
         }
+        config["proxy"] = normalize_proxy_config(config.get("proxy"))
+        return config
 
     def _runtime_config(self, config: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -603,11 +676,12 @@ class Master:
 
     def _environment_info(self, record: EnvironmentRecord) -> dict[str, Any]:
         node = self.nodes.get(record.node_id)
+        config = self._normalized_config(record.config)
         return {
             "worker_id": record.worker_id,
             "kind": "remote",
             "node_id": record.node_id,
-            "env_name": record.env_name or record.config.get("env_name") or record.worker_id,
+            "env_name": record.env_name or config.get("env_name") or record.worker_id,
             "base_url": node.base_url if node else "",
             "registered_at": record.created_at,
             "last_seen": None,
@@ -617,9 +691,20 @@ class Master:
             "running": False,
             "status": record.status,
             "stats": {},
-            "config": record.config,
+            "config": config,
             "slave": {},
         }
+
+    def _normalized_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **config,
+            "proxy": normalize_proxy_config(config.get("proxy")),
+        }
+
+    def _normalized_record(self, record: EnvironmentRecord) -> EnvironmentRecord:
+        record.config = self._normalized_config(record.config)
+        record.env_name = record.env_name or record.config.get("env_name")
+        return record
 
     def _mark_environment_status(self, worker_id: str, status: str) -> None:
         record = self.environments.get(worker_id)

@@ -91,6 +91,8 @@ SPIDER_SLAVE_MAX_ENVIRONMENTS=4
 docker compose --env-file .env up -d --build --scale spider-slave=4
 ```
 
+SQLite 数据库会持久化到当前项目目录的 `./data/spider.db`，升级或重建容器时保留这个目录即可保留环境配置。
+
 如果每个 node `SPIDER_SLAVE_MAX_ENVIRONMENTS=4`，4 个 node 总容量就是 16 个 Playwright 浏览器环境。
 
 ## 本地开发

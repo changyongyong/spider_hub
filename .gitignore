@@ -29,6 +29,10 @@ yarn-debug.log*
 pnpm-debug.log*
 lerna-debug.log*
 server/output/
+data/
+*.db
+*.db-shm
+*.db-wal
 temp/
 
 # Local config / secrets

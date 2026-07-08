@@ -11,7 +11,7 @@ services:
     expose:
       - "8000"
     volumes:
-      - spider-data:/app/master/data
+      - ./data:/app/master/data
       - spider-output:/app/master/output
     environment:
       PYTHONUNBUFFERED: "1"
@@ -80,5 +80,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  spider-data:
   spider-output:
