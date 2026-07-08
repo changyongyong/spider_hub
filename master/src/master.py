@@ -78,7 +78,7 @@ class RemoteBrowserWorker:
         self,
         url: str,
         wait_seconds: float | None = None,
-        include_html: bool = False,
+        include_html: bool = True,
         include_links: bool = True,
     ) -> dict[str, Any]:
         payload = {
@@ -724,7 +724,7 @@ class Master:
         worker_id: str | None = None,
         strategy: str | None = None,
         wait_seconds: float | None = None,
-        include_html: bool = False,
+        include_html: bool = True,
         include_links: bool = True,
     ) -> dict[str, Any]:
         worker = self.choose_worker(worker_id=worker_id, strategy=strategy)
@@ -741,7 +741,7 @@ class Master:
         worker_id: str | None = None,
         strategy: str | None = None,
         wait_seconds: float | None = None,
-        include_html: bool = False,
+        include_html: bool = True,
         include_links: bool = True,
     ) -> JobState:
         job_id = uuid.uuid4().hex

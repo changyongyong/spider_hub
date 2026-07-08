@@ -20,11 +20,15 @@ const loginLoading = ref(false);
 const testForm = reactive({
   url: "",
   worker_id: "",
-  wait_seconds: 3
+  wait_seconds: 3,
+  include_html: true
 });
 const testLoading = ref(false);
 const testError = ref("");
 const testResult = ref(null);
+const testElapsedMs = ref(0);
+let testTimer = null;
+let testStartedAt = 0;
 const refreshIntervals = [
   { label: "关闭", value: 0 },
   { label: "3 秒", value: 3000 },
@@ -34,7 +38,18 @@ const refreshIntervals = [
 ];
 const apiTarget = apiBaseUrl || apiProxyTarget || "same-origin";
 const runningWorkers = computed(() => dashboard.workers.value.filter((worker) => worker.running));
-const testResultText = computed(() => (testResult.value ? JSON.stringify(testResult.value, null, 2) : ""));
+const testResultTitle = computed(() => (testForm.include_html ? "返回 HTML" : "返回信息"));
+const testResultText = computed(() => {
+  if (!testResult.value) return "";
+  if (testForm.include_html && testResult.value.html) return testResult.value.html;
+  return JSON.stringify(testResult.value, null, 2);
+});
+const testElapsedText = computed(() => {
+  if (!testLoading.value && !testElapsedMs.value) return "";
+  const seconds = testElapsedMs.value / 1000;
+  const text = seconds >= 10 ? seconds.toFixed(1) : seconds.toFixed(2);
+  return testLoading.value ? `请求中 ${text} 秒` : `耗时 ${text} 秒`;
+});
 
 onMounted(async () => {
   window.addEventListener("spider-auth-expired", handleAuthExpired);
@@ -46,6 +61,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("spider-auth-expired", handleAuthExpired);
+  stopTestTimer();
 });
 
 async function createEnvironment(payload) {
@@ -91,26 +107,46 @@ async function toggleEnvironment(worker) {
 async function testFetch() {
   testError.value = "";
   testResult.value = null;
+  testElapsedMs.value = 0;
   if (!testForm.url.trim()) {
     testError.value = "请输入要测试的 URL";
     return;
   }
 
   testLoading.value = true;
+  startTestTimer();
   try {
     testResult.value = await fetchUrl({
       url: testForm.url.trim(),
       worker_id: testForm.worker_id || undefined,
       wait_seconds: Number(testForm.wait_seconds),
-      include_html: false,
+      include_html: testForm.include_html,
       include_links: true
     });
     await dashboard.refresh({ silent: true });
   } catch (caught) {
     testError.value = caught.message;
   } finally {
+    stopTestTimer();
     testLoading.value = false;
   }
+}
+
+function startTestTimer() {
+  stopTestTimer();
+  testStartedAt = performance.now();
+  testTimer = window.setInterval(() => {
+    testElapsedMs.value = performance.now() - testStartedAt;
+  }, 200);
+}
+
+function stopTestTimer() {
+  if (testTimer) {
+    testElapsedMs.value = performance.now() - testStartedAt;
+    window.clearInterval(testTimer);
+    testTimer = null;
+  }
+  testStartedAt = 0;
 }
 
 async function registerExisting() {
@@ -307,7 +343,7 @@ function handleAuthExpired() {
 
       <div v-else class="grid gap-4">
         <section class="panel">
-          <form class="grid gap-3 border-b border-line px-3 py-3 lg:grid-cols-[minmax(0,1fr)_220px_120px_auto]" @submit.prevent="testFetch">
+          <form class="grid gap-3 border-b border-line px-3 py-3 lg:grid-cols-[minmax(0,1fr)_220px_120px_110px_auto]" @submit.prevent="testFetch">
             <label class="label gap-1">
               测试 URL
               <input v-model.trim="testForm.url" class="input" placeholder="https://example.com" type="url">
@@ -323,10 +359,14 @@ function handleAuthExpired() {
             </label>
             <label class="label gap-1">
               等待秒数
-              <input v-model="testForm.wait_seconds" class="input" min="0" type="number">
+              <input v-model="testForm.wait_seconds" class="input w-[100px]" min="0" type="number">
+            </label>
+            <label class="flex items-end gap-2 pb-2 text-sm text-slate-700">
+              <input v-model="testForm.include_html" class="h-4 w-4" type="checkbox">
+              返回 HTML
             </label>
             <div class="flex items-end">
-              <button class="btn h-9 min-w-24" type="submit" :disabled="testLoading">
+              <button class="btn h-9 min-w-20 max-w-20" type="submit" :disabled="testLoading">
                 <Loader2 v-if="testLoading" class="h-4 w-4 animate-spin" aria-hidden="true" />
                 <Play v-else class="h-4 w-4" aria-hidden="true" />
                 测试
@@ -336,14 +376,17 @@ function handleAuthExpired() {
           <div v-if="testError" class="border-b border-line px-3 py-2 text-sm text-red-700">
             {{ testError }}
           </div>
+          <div v-if="testElapsedText" class="border-b border-line px-3 py-2 text-sm text-muted">
+            {{ testElapsedText }}
+          </div>
           <div class="grid gap-2 px-3 py-3">
             <label class="label gap-1">
-              返回信息
+              {{ testResultTitle }}
               <textarea
                 class="input h-[calc(100vh-330px)] min-h-80 resize-none py-2 font-mono text-xs leading-5"
                 readonly
                 :value="testResultText"
-                placeholder="测试完成后返回信息会显示在这里"
+                :placeholder="testForm.include_html ? '测试完成后 HTML 会显示在这里' : '测试完成后返回信息会显示在这里'"
               ></textarea>
             </label>
           </div>

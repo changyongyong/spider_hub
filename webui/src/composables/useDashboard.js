@@ -15,7 +15,7 @@ import {
 } from "../api/masterApi";
 import { countByStatus } from "../domain/dashboard";
 
-const DEFAULT_REFRESH_INTERVAL_MS = 3000;
+const DEFAULT_REFRESH_INTERVAL_MS = 0;
 
 export function useDashboard() {
   const health = ref({ ok: false, workers: 0 });

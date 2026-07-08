@@ -38,7 +38,7 @@ class FetchRequest(BaseModel):
     worker_id: str | None = None
     strategy: str | None = None
     wait_seconds: float | None = Field(default=None, ge=0)
-    include_html: bool = False
+    include_html: bool = True
     include_links: bool = True
 
 

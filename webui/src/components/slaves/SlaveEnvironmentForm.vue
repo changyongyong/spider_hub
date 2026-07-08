@@ -624,7 +624,7 @@ function updateActiveSection() {
                 <button :class="buttonClass(form.proxy.enabled, true)" type="button" @click="form.proxy.enabled = true">自定义</button>
               </div>
             </div>
-            <div class="grid max-w-[850px] gap-4 md:grid-cols-[130px_260px_140px_260px]">
+            <div class="grid max-w-[680px] gap-4 md:grid-cols-[110px_240px_120px_160px]">
               <label class="label md:col-span-1">
                 代理类型 *
                 <select v-model="form.proxy.scheme" class="input">
