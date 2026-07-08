@@ -96,6 +96,7 @@ function handleAuthExpired() {
   <SlaveEnvironmentForm
     v-if="session && mode === 'create'"
     :nodes="dashboard.slaves.value"
+    :error="dashboard.error.value"
     @cancel="mode = 'list'"
     @submit="createEnvironment"
   />
@@ -159,10 +160,6 @@ function handleAuthExpired() {
             <Boxes class="h-4 w-4" aria-hidden="true" />
             我的环境
           </button>
-          <button class="flex h-10 items-center gap-2 rounded px-3 text-muted hover:bg-slate-50" type="button">常用环境</button>
-          <button class="flex h-10 items-center gap-2 rounded px-3 text-muted hover:bg-slate-50" type="button">最近打开</button>
-          <button class="flex h-10 items-center gap-2 rounded px-3 text-muted hover:bg-slate-50" type="button">环境分组</button>
-          <button class="flex h-10 items-center gap-2 rounded px-3 text-muted hover:bg-slate-50" type="button">回收站</button>
         </nav>
       </aside>
 

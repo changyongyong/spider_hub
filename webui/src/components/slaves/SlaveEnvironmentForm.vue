@@ -1,12 +1,16 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
-import { ArrowLeft, ChevronDown, Monitor, Smartphone } from "lucide-vue-next";
+import { ArrowLeft, ChevronDown, Monitor } from "lucide-vue-next";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 
 const props = defineProps({
   nodes: {
     type: Array,
     default: () => []
+  },
+  error: {
+    type: String,
+    default: ""
   }
 });
 
@@ -24,8 +28,8 @@ const form = reactive({
   node_id: "",
   env_name: "新建环境",
   count: 1,
-  browser_channel: "chrome",
-  headful: true,
+  browser_channel: "",
+  headful: false,
   challenge_wait: 5,
   platform: "Windows",
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.7499.109 Safari/537.36",
@@ -179,10 +183,6 @@ function nodeLabel(node) {
             <Monitor class="h-4 w-4" aria-hidden="true" />
             浏览器
           </span>
-          <span class="inline-flex items-center gap-1 pb-2 text-muted">
-            <Smartphone class="h-4 w-4" aria-hidden="true" />
-            云手机
-          </span>
         </div>
         <nav class="grid gap-1 text-sm">
           <button
@@ -225,6 +225,9 @@ function nodeLabel(node) {
             </label>
             <div v-if="props.nodes.length === 0" class="max-w-4xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               当前没有可用 slave 节点。请先启动或注册 slave 节点，再创建 Playwright 环境。
+            </div>
+            <div v-if="props.error" class="max-w-4xl rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {{ props.error }}
             </div>
             <div class="grid max-w-4xl gap-4 md:grid-cols-2">
               <label class="label">

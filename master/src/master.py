@@ -149,7 +149,7 @@ class SlaveNode:
     async def create_environment(self, payload: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(f"{self.base_url}/environments", json=payload)
-            response.raise_for_status()
+            raise_for_status(response)
             result = response.json()
         await self.refresh()
         return result
@@ -181,6 +181,19 @@ class SlaveNode:
             "available_slots": self.status.get("available_slots"),
             "workers": self.status.get("workers", []),
         }
+
+
+def raise_for_status(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        detail = response.text
+        try:
+            payload = response.json()
+            detail = payload.get("detail") or detail
+        except ValueError:
+            pass
+        raise RuntimeError(f"slave {response.status_code}: {detail}") from error
 
 
 class Master:
