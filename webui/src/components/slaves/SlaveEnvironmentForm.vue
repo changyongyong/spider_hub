@@ -319,29 +319,51 @@ function applyProxy(proxy) {
 
   if (typeof proxy === "object") {
     const parsed = parseProxyServer(proxy.server || "");
+    const host = proxy.host || parsed.host || "";
+    const port = proxy.port ? String(proxy.port) : parsed.port || "";
+    if (!host || !port) {
+      form.proxy.enabled = false;
+      form.proxy.host = "";
+      form.proxy.port = "";
+      form.proxy.username = "";
+      form.proxy.password = "";
+      return;
+    }
     form.proxy.enabled = true;
     form.proxy.scheme = proxy.scheme || parsed.scheme || "http";
-    form.proxy.host = proxy.host || parsed.host || "";
-    form.proxy.port = proxy.port ? String(proxy.port) : parsed.port || "";
-    form.proxy.username = proxy.username || "";
-    form.proxy.password = proxy.password || "";
+    form.proxy.host = host;
+    form.proxy.port = port;
+    form.proxy.username = proxy.username || parsed.username || "";
+    form.proxy.password = proxy.password || parsed.password || "";
     return;
   }
 
-  const match = String(proxy).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
-  if (!match) return;
+  const parsed = parseProxyServer(proxy);
+  if (!parsed.host || !parsed.port) return;
   form.proxy.enabled = true;
-  form.proxy.scheme = match[1];
-  form.proxy.host = match[2];
-  form.proxy.port = match[3];
-  form.proxy.username = "";
-  form.proxy.password = "";
+  form.proxy.scheme = parsed.scheme;
+  form.proxy.host = parsed.host;
+  form.proxy.port = parsed.port;
+  form.proxy.username = parsed.username || "";
+  form.proxy.password = parsed.password || "";
 }
 
 function parseProxyServer(server) {
-  const match = String(server).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
-  if (!match) return { scheme: "", host: "", port: "" };
-  return { scheme: match[1], host: match[2], port: match[3] };
+  try {
+    const parsed = new URL(String(server));
+    if (!["http:", "https:", "socks5:"].includes(parsed.protocol) || !parsed.hostname || !parsed.port) {
+      return { scheme: "", host: "", port: "", username: "", password: "" };
+    }
+    return {
+      scheme: parsed.protocol.replace(":", ""),
+      host: parsed.hostname,
+      port: parsed.port,
+      username: decodeURIComponent(parsed.username || ""),
+      password: decodeURIComponent(parsed.password || "")
+    };
+  } catch {
+    return { scheme: "", host: "", port: "", username: "", password: "" };
+  }
 }
 
 function payload() {
@@ -502,12 +524,11 @@ function updateActiveSection() {
       <main class="grid h-full grid-cols-[minmax(0,1fr)_360px] overflow-hidden">
         <form ref="formScroll" class="overflow-y-auto px-7 py-6" novalidate @scroll.passive="updateActiveSection" @submit.prevent="submit">
           <section id="env-basic" class="scroll-mt-4 grid gap-5 border-b border-line pb-7">
-            <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
+            <header class="flex h-9 items-center bg-slate-100 px-4 text-sm font-semibold">
               <span class="inline-flex items-center gap-2">
                 <Monitor class="h-4 w-4 text-muted" aria-hidden="true" />
                 基础设置
               </span>
-              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
               <span class="flex items-center gap-2">
@@ -565,7 +586,7 @@ function updateActiveSection() {
               User Agent
               <input v-model.trim="form.user_agent" class="input max-w-4xl">
             </label>
-            <div class="grid max-w-4xl gap-4 md:grid-cols-3">
+            <div class="grid max-w-4xl gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,1.35fr)]">
               <label class="label">
                 语言
                 <input v-model.trim="form.locale" class="input" placeholder="pl-PL">
@@ -576,7 +597,7 @@ function updateActiveSection() {
               </label>
               <label class="label">
                 分辨率
-                <div class="grid grid-cols-2 gap-2">
+                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
                   <label class="grid gap-1">
                     <span class="flex items-center gap-1 text-xs font-normal text-muted">
                       宽
@@ -597,9 +618,8 @@ function updateActiveSection() {
           </section>
 
           <section id="env-proxy" class="scroll-mt-4 grid gap-5 border-b border-line py-7">
-            <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
+            <header class="flex h-9 items-center bg-slate-100 px-4 text-sm font-semibold">
               代理信息
-              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <div class="grid gap-2">
               <span class="text-sm text-muted">代理方式</span>
@@ -645,9 +665,8 @@ function updateActiveSection() {
           </section>
 
           <section id="env-account" class="scroll-mt-4 grid gap-5 border-b border-line py-7">
-            <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
+            <header class="flex h-9 items-center bg-slate-100 px-4 text-sm font-semibold">
               账号信息
-              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
               <span class="flex items-center gap-2">
@@ -663,9 +682,8 @@ function updateActiveSection() {
           </section>
 
           <section id="env-advanced" class="scroll-mt-4 grid gap-5 pb-24 pt-7">
-            <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
+            <header class="flex h-9 items-center bg-slate-100 px-4 text-sm font-semibold">
               高级设置
-              <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <div class="grid gap-4 md:grid-cols-2">
               <SegmentedControl v-model="form.webrtc" label="WebRTC" :options="[['hide','隐藏'],['replace','替换'],['real','真实'],['disable','禁用']]" />

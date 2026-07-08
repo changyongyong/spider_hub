@@ -105,7 +105,7 @@ class RemoteBrowserWorker:
         process_status = None
         if self.managed:
             process_status = self.managed.process.poll()
-        config = saved_config or self.status.get("config", {})
+        config = normalize_environment_config(saved_config or self.status.get("config", {}))
 
         return {
             "worker_id": self.worker_id,
@@ -254,6 +254,14 @@ def normalize_proxy_config(proxy: Any) -> dict[str, Any]:
     if password:
         result["password"] = password
     return result
+
+
+def normalize_environment_config(config: dict[str, Any]) -> dict[str, Any]:
+    config = config or {}
+    return {
+        **config,
+        "proxy": normalize_proxy_config(config.get("proxy")),
+    }
 
 
 def parse_proxy_server(server: Any) -> dict[str, Any]:
@@ -696,10 +704,7 @@ class Master:
         }
 
     def _normalized_config(self, config: dict[str, Any]) -> dict[str, Any]:
-        return {
-            **config,
-            "proxy": normalize_proxy_config(config.get("proxy")),
-        }
+        return normalize_environment_config(config)
 
     def _normalized_record(self, record: EnvironmentRecord) -> EnvironmentRecord:
         record.config = self._normalized_config(record.config)

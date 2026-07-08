@@ -138,19 +138,27 @@ function fillQuickProxy(proxy) {
 
   if (typeof proxy === "object") {
     const parsed = parseProxyServer(proxy.server || "");
+    const host = proxy.host || parsed.host || "";
+    const port = proxy.port ? String(proxy.port) : parsed.port || "";
+    if (!host || !port) {
+      quickProxy.enabled = false;
+      return;
+    }
     quickProxy.scheme = proxy.scheme || parsed.scheme || "http";
-    quickProxy.host = proxy.host || parsed.host || "";
-    quickProxy.port = proxy.port ? String(proxy.port) : parsed.port || "";
-    quickProxy.username = proxy.username || "";
-    quickProxy.password = proxy.password || "";
+    quickProxy.host = host;
+    quickProxy.port = port;
+    quickProxy.username = proxy.username || parsed.username || "";
+    quickProxy.password = proxy.password || parsed.password || "";
     return;
   }
 
-  const match = String(proxy).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
-  if (!match) return;
-  quickProxy.scheme = match[1];
-  quickProxy.host = match[2];
-  quickProxy.port = match[3];
+  const parsed = parseProxyServer(proxy);
+  if (!parsed.host || !parsed.port) return;
+  quickProxy.scheme = parsed.scheme;
+  quickProxy.host = parsed.host;
+  quickProxy.port = parsed.port;
+  quickProxy.username = parsed.username || "";
+  quickProxy.password = parsed.password || "";
 }
 
 function closeQuickEdit() {
@@ -227,29 +235,46 @@ function proxyFromCurrent(proxy) {
   }
   if (typeof proxy === "object") {
     const parsed = parseProxyServer(proxy.server || "");
+    const host = proxy.host || parsed.host;
+    const port = proxy.port ? Number(proxy.port) : parsed.port ? Number(parsed.port) : undefined;
+    if (!host || !port) return { enabled: false };
     return {
       enabled: true,
       scheme: proxy.scheme || parsed.scheme || "http",
-      host: proxy.host || parsed.host || undefined,
-      port: proxy.port ? Number(proxy.port) : parsed.port ? Number(parsed.port) : undefined,
-      username: proxy.username || undefined,
-      password: proxy.password || undefined
+      host,
+      port,
+      username: proxy.username || parsed.username || undefined,
+      password: proxy.password || parsed.password || undefined
     };
   }
-  const match = String(proxy).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
-  if (!match) return { enabled: false };
+  const parsed = parseProxyServer(proxy);
+  if (!parsed.host || !parsed.port) return { enabled: false };
   return {
     enabled: true,
-    scheme: match[1],
-    host: match[2],
-    port: Number(match[3])
+    scheme: parsed.scheme,
+    host: parsed.host,
+    port: Number(parsed.port),
+    username: parsed.username || undefined,
+    password: parsed.password || undefined
   };
 }
 
 function parseProxyServer(server) {
-  const match = String(server).match(/^(https?|socks5):\/\/([^:/]+):(\d+)$/);
-  if (!match) return { scheme: "", host: "", port: "" };
-  return { scheme: match[1], host: match[2], port: match[3] };
+  try {
+    const parsed = new URL(String(server));
+    if (!["http:", "https:", "socks5:"].includes(parsed.protocol) || !parsed.hostname || !parsed.port) {
+      return { scheme: "", host: "", port: "", username: "", password: "" };
+    }
+    return {
+      scheme: parsed.protocol.replace(":", ""),
+      host: parsed.hostname,
+      port: parsed.port,
+      username: decodeURIComponent(parsed.username || ""),
+      password: decodeURIComponent(parsed.password || "")
+    };
+  } catch {
+    return { scheme: "", host: "", port: "", username: "", password: "" };
+  }
 }
 
 function launchArgs() {
