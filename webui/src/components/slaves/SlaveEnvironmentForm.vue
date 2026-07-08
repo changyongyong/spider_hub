@@ -1,10 +1,14 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ArrowLeft, Monitor } from "lucide-vue-next";
 import SegmentedControl from "../ui/SegmentedControl.vue";
 
 const props = defineProps({
   nodes: {
+    type: Array,
+    default: () => []
+  },
+  environments: {
     type: Array,
     default: () => []
   },
@@ -23,6 +27,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["cancel", "submit"]);
+const initializedDefaultName = ref(false);
+const submitted = ref(false);
+const cookiesError = ref("");
+const tipMessage = ref("");
+let tipTimer = null;
 
 const sections = [
   { key: "basic", label: "基础设置" },
@@ -32,6 +41,8 @@ const sections = [
 ];
 
 const localError = ref("");
+const activeSection = ref("basic");
+const formScroll = ref(null);
 const form = reactive({
   node_id: "",
   env_name: "新建环境",
@@ -93,13 +104,45 @@ const preview = computed(() => [
   ["Do Not Track", labelOf(form.do_not_track)],
   ["端口扫描保护", form.port_scan_protection === "on" ? "开启" : "关闭"]
 ]);
-const visibleError = computed(() => localError.value || props.error);
 const isEditing = computed(() => props.mode === "edit");
 const pageTitle = computed(() => (isEditing.value ? "编辑环境" : "新建环境"));
+const duplicateName = computed(() => hasDuplicateName(form.env_name));
+const envNameError = computed(() => {
+  if (duplicateName.value) return "环境名称已存在，请换一个名称";
+  if (submitted.value && !form.env_name.trim()) return "请填写环境名称";
+  return "";
+});
+const nodeError = computed(() => (submitted.value && !form.node_id ? "请选择 slave 节点" : ""));
+const proxyHostError = computed(() => (
+  submitted.value && form.proxy.enabled && !form.proxy.host ? "请填写代理主机" : ""
+));
+const proxyPortError = computed(() => {
+  if (!submitted.value || !form.proxy.enabled) return "";
+  if (!form.proxy.port) return "请填写代理端口";
+  const port = Number(form.proxy.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return "端口必须是 1-65535 的整数";
+  return "";
+});
+const viewportWidthError = computed(() => {
+  if (!submitted.value) return "";
+  const width = Number(form.viewport_width);
+  if (!Number.isInteger(width) || width < 320) return "宽度至少 320";
+  return "";
+});
+const viewportHeightError = computed(() => {
+  if (!submitted.value) return "";
+  const height = Number(form.viewport_height);
+  if (!Number.isInteger(height) || height < 240) return "高度至少 240";
+  return "";
+});
 const submitHint = computed(() => {
-  if (!form.env_name.trim()) return "请先填写环境名称";
-  if (!form.node_id) return "请选择一个可用的 slave 节点";
-  if (form.proxy.enabled && (!form.proxy.host || !form.proxy.port)) return "代理已启用，请填写代理主机和端口";
+  if (envNameError.value) return envNameError.value;
+  if (nodeError.value) return nodeError.value;
+  if (proxyHostError.value) return proxyHostError.value;
+  if (proxyPortError.value) return proxyPortError.value;
+  if (viewportWidthError.value) return viewportWidthError.value;
+  if (viewportHeightError.value) return viewportHeightError.value;
+  if (cookiesError.value) return cookiesError.value;
   return "";
 });
 
@@ -112,6 +155,32 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  () => props.environments,
+  () => {
+    if (props.mode === "create" && !initializedDefaultName.value) {
+      form.env_name = nextEnvironmentName();
+      initializedDefaultName.value = true;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.error,
+  (error) => {
+    if (error) showTip(error);
+  }
+);
+
+onMounted(() => {
+  updateActiveSection();
+});
+
+onBeforeUnmount(() => {
+  if (tipTimer) window.clearTimeout(tipTimer);
+});
 
 function browserLabel(value) {
   if (value === "chrome") return "Chrome";
@@ -140,6 +209,51 @@ function buttonClass(value, expected) {
     "h-8 rounded border px-3 text-sm",
     value === expected ? "border-blue-500 bg-blue-50 text-blue-600" : "border-line bg-white text-slate-600 hover:bg-slate-50"
   ];
+}
+
+function showTip(message) {
+  tipMessage.value = message;
+  if (tipTimer) window.clearTimeout(tipTimer);
+  tipTimer = window.setTimeout(() => {
+    tipMessage.value = "";
+    tipTimer = null;
+  }, 3200);
+}
+
+function environmentName(environment) {
+  return environment.env_name || environment.config?.env_name || "";
+}
+
+function hasDuplicateName(value) {
+  const currentWorkerId = props.environment?.worker_id;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return props.environments.some((environment) => {
+    if (environment.worker_id === currentWorkerId) return false;
+    return environmentName(environment).trim().toLowerCase() === normalized;
+  });
+}
+
+function nextEnvironmentName() {
+  const names = props.environments
+    .map(environmentName)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length === 0) return "新建环境";
+
+  const existing = new Set(names.map((name) => name.toLowerCase()));
+  const latest = names[0];
+  const match = latest.match(/^(.*?)(\d+)$/);
+  const base = match ? match[1] : latest;
+  let nextNumber = match ? Number(match[2]) + 1 : 1;
+  const width = match ? Math.max(2, match[2].length) : 2;
+
+  let candidate = `${base}${String(nextNumber).padStart(width, "0")}`;
+  while (existing.has(candidate.toLowerCase())) {
+    nextNumber += 1;
+    candidate = `${base}${String(nextNumber).padStart(width, "0")}`;
+  }
+  return candidate;
 }
 
 function parseCookies() {
@@ -268,30 +382,53 @@ function payload() {
 }
 
 function submit() {
+  submitted.value = true;
   localError.value = "";
+  cookiesError.value = "";
   if (!form.env_name.trim()) {
     localError.value = "请填写环境名称";
+    showTip(localError.value);
+    return;
+  }
+  if (duplicateName.value) {
+    localError.value = "环境名称已存在，请换一个名称";
+    showTip(localError.value);
     return;
   }
   if (!form.node_id) {
     localError.value = "请选择 slave 节点";
+    showTip(localError.value);
     return;
   }
   if (form.proxy.enabled && (!form.proxy.host || !form.proxy.port)) {
     localError.value = "启用代理时必须填写代理主机和端口";
+    showTip(localError.value);
     return;
   }
   if (form.proxy.enabled) {
     const port = Number(form.proxy.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       localError.value = "代理端口必须是 1-65535 的整数";
+      showTip(localError.value);
       return;
     }
+  }
+  if (viewportWidthError.value) {
+    localError.value = viewportWidthError.value;
+    showTip(localError.value);
+    return;
+  }
+  if (viewportHeightError.value) {
+    localError.value = viewportHeightError.value;
+    showTip(localError.value);
+    return;
   }
   try {
     parseCookies();
   } catch (caught) {
+    cookiesError.value = caught.message;
     localError.value = caught.message;
+    showTip(localError.value);
     return;
   }
   emit("submit", payload());
@@ -304,12 +441,35 @@ function nodeLabel(node) {
 }
 
 function scrollToSection(key) {
+  activeSection.value = key;
   document.getElementById(`env-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateActiveSection() {
+  const scrollEl = formScroll.value;
+  if (!scrollEl) return;
+
+  let nextKey = sections[0].key;
+  for (const section of sections) {
+    const element = document.getElementById(`env-${section.key}`);
+    if (!element) continue;
+    if (element.offsetTop - scrollEl.scrollTop <= 96) {
+      nextKey = section.key;
+    }
+  }
+  activeSection.value = nextKey;
 }
 </script>
 
 <template>
   <div class="min-h-screen bg-white">
+    <div
+      v-if="tipMessage"
+      class="fixed right-5 top-5 z-[10001] max-w-md rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg"
+    >
+      {{ tipMessage }}
+    </div>
+
     <div class="flex h-14 items-center justify-between border-b border-line px-5">
       <button class="inline-flex items-center gap-1 text-sm text-muted hover:text-ink" type="button" @click="emit('cancel')">
         <ArrowLeft class="h-4 w-4" aria-hidden="true" />
@@ -325,17 +485,22 @@ function scrollToSection(key) {
           <button
             v-for="section in sections"
             :key="section.key"
-            class="rounded px-3 py-2 text-left text-slate-600 hover:bg-slate-50 hover:text-ink"
+            class="flex items-center gap-2 rounded px-3 py-2 text-left transition"
+            :class="activeSection === section.key ? 'bg-blue-50 font-semibold text-blue-600 shadow-[inset_3px_0_0_#2563eb]' : 'text-slate-600 hover:bg-slate-50 hover:text-ink'"
             type="button"
             @click="scrollToSection(section.key)"
           >
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="activeSection === section.key ? 'bg-blue-600' : 'bg-slate-300'"
+            ></span>
             {{ section.label }}
           </button>
         </nav>
       </aside>
 
       <main class="grid h-full grid-cols-[minmax(0,1fr)_360px] overflow-hidden">
-        <form class="overflow-y-auto px-7 py-6" novalidate @submit.prevent="submit">
+        <form ref="formScroll" class="overflow-y-auto px-7 py-6" novalidate @scroll.passive="updateActiveSection" @submit.prevent="submit">
           <section id="env-basic" class="scroll-mt-4 grid gap-5 border-b border-line pb-7">
             <header class="flex h-9 items-center justify-between bg-slate-100 px-4 text-sm font-semibold">
               <span class="inline-flex items-center gap-2">
@@ -345,11 +510,17 @@ function scrollToSection(key) {
               <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
-              环境名称 *
+              <span class="flex items-center gap-2">
+                环境名称 *
+                <span v-if="envNameError" class="text-xs font-normal text-red-600">* {{ envNameError }}</span>
+              </span>
               <input v-model.trim="form.env_name" class="input max-w-4xl" required>
             </label>
             <label class="label max-w-4xl">
-              Slave 节点 *
+              <span class="flex items-center gap-2">
+                Slave 节点 *
+                <span v-if="nodeError" class="text-xs font-normal text-red-600">* {{ nodeError }}</span>
+              </span>
               <select v-model="form.node_id" class="input" :disabled="isEditing" required>
                 <option value="" disabled>请选择承载该 Playwright 环境的 slave 节点</option>
                 <option
@@ -363,9 +534,6 @@ function scrollToSection(key) {
             </label>
             <div v-if="props.nodes.length === 0" class="max-w-4xl rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
               当前没有可用 slave 节点。请先启动或注册 slave 节点，再创建 Playwright 环境。
-            </div>
-            <div v-if="visibleError" class="max-w-4xl rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {{ visibleError }}
             </div>
             <div class="grid max-w-4xl gap-4 md:grid-cols-2">
               <label class="label">
@@ -408,10 +576,22 @@ function scrollToSection(key) {
               </label>
               <label class="label">
                 分辨率
-                <span class="grid grid-cols-2 gap-2">
-                  <input v-model="form.viewport_width" class="input" type="number">
-                  <input v-model="form.viewport_height" class="input" type="number">
-                </span>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="grid gap-1">
+                    <span class="flex items-center gap-1 text-xs font-normal text-muted">
+                      宽
+                      <span v-if="viewportWidthError" class="text-red-600">* {{ viewportWidthError }}</span>
+                    </span>
+                    <input v-model="form.viewport_width" class="input" type="number" min="320">
+                  </label>
+                  <label class="grid gap-1">
+                    <span class="flex items-center gap-1 text-xs font-normal text-muted">
+                      高
+                      <span v-if="viewportHeightError" class="text-red-600">* {{ viewportHeightError }}</span>
+                    </span>
+                    <input v-model="form.viewport_height" class="input" type="number" min="240">
+                  </label>
+                </div>
               </label>
             </div>
           </section>
@@ -438,11 +618,17 @@ function scrollToSection(key) {
                 </select>
               </label>
               <label class="label">
-                代理主机 *
+                <span class="flex items-center gap-2">
+                  代理主机 *
+                  <span v-if="proxyHostError" class="text-xs font-normal text-red-600">* {{ proxyHostError }}</span>
+                </span>
                 <input v-model.trim="form.proxy.host" class="input" placeholder="请输入 IP 地址或域名">
               </label>
               <label class="label">
-                代理端口 *
+                <span class="flex items-center gap-2">
+                  代理端口 *
+                  <span v-if="proxyPortError" class="text-xs font-normal text-red-600">* {{ proxyPortError }}</span>
+                </span>
                 <input v-model="form.proxy.port" class="input" type="number" placeholder="端口号">
               </label>
             </div>
@@ -464,7 +650,10 @@ function scrollToSection(key) {
               <button v-if="isEditing" class="h-7 rounded border border-line bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" type="submit">保存此块</button>
             </header>
             <label class="label">
-              Cookie
+              <span class="flex items-center gap-2">
+                Cookie
+                <span v-if="cookiesError" class="text-xs font-normal text-red-600">* {{ cookiesError }}</span>
+              </span>
               <textarea v-model.trim="form.cookiesText" class="input h-28 max-w-4xl py-2" placeholder="支持 Playwright cookies JSON 数组"></textarea>
             </label>
             <label class="label">

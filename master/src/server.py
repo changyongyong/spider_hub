@@ -397,13 +397,19 @@ def model_data(model: BaseModel) -> dict[str, Any]:
     return model.dict()
 
 
-def proxy_to_playwright(proxy: ProxyConfigRequest | None) -> dict[str, str] | None:
+def proxy_to_config(proxy: ProxyConfigRequest | None) -> dict[str, Any]:
     if not proxy or not proxy.enabled:
-        return None
+        return {"enabled": False}
     if not proxy.host or not proxy.port:
         raise ValueError("proxy host and port are required")
 
-    result = {"server": f"{proxy.scheme}://{proxy.host}:{proxy.port}"}
+    result: dict[str, Any] = {
+        "enabled": True,
+        "scheme": proxy.scheme,
+        "host": proxy.host,
+        "port": proxy.port,
+        "server": f"{proxy.scheme}://{proxy.host}:{proxy.port}",
+    }
     if proxy.username:
         result["username"] = proxy.username
     if proxy.password:
@@ -414,7 +420,7 @@ def proxy_to_playwright(proxy: ProxyConfigRequest | None) -> dict[str, str] | No
 def slave_env_config(request: StartSlaveRequest) -> dict[str, Any]:
     return {
         "env_name": request.env_name,
-        "proxy": proxy_to_playwright(request.proxy),
+        "proxy": proxy_to_config(request.proxy),
         "platform": request.platform,
         "launch_args": request.launch_args,
         "user_agent": request.user_agent,

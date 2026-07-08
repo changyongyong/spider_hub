@@ -211,6 +211,25 @@ def preserve_saved_proxy_password(old_config: dict[str, Any], new_config: dict[s
         new_proxy["password"] = old_proxy["password"]
 
 
+def proxy_for_runtime(proxy: dict[str, Any] | None) -> dict[str, str] | None:
+    if not proxy or proxy.get("enabled") is False:
+        return None
+
+    server = proxy.get("server")
+    if not server and proxy.get("host") and proxy.get("port"):
+        scheme = proxy.get("scheme") or "http"
+        server = f"{scheme}://{proxy['host']}:{proxy['port']}"
+    if not server:
+        return None
+
+    result = {"server": server}
+    if proxy.get("username"):
+        result["username"] = proxy["username"]
+    if proxy.get("password"):
+        result["password"] = proxy["password"]
+    return result
+
+
 class Master:
     def __init__(
         self,
@@ -421,7 +440,7 @@ class Master:
         if node_info.get("available_slots") == 0:
             raise RuntimeError(f"slave node {record.node_id} has no available slots")
 
-        environment = await node.create_environment(record.config)
+        environment = await node.create_environment(self._runtime_config(record.config))
         worker = RemoteBrowserWorker(
             worker_id=environment["worker_id"],
             base_url=node.base_url,
@@ -457,7 +476,7 @@ class Master:
         worker = self.workers.get(worker_id)
         if worker:
             async with httpx.AsyncClient(timeout=120) as client:
-                response = await client.patch(f"{worker.base_url}/environments/{worker_id}", json=merged_config)
+                response = await client.patch(f"{worker.base_url}/environments/{worker_id}", json=self._runtime_config(merged_config))
                 raise_for_status(response)
                 environment = response.json()
 
@@ -564,6 +583,12 @@ class Master:
             "headful": self.headful if headful is None else headful,
             "browser_channel": browser_channel if browser_channel is not None else self.browser_channel,
             "challenge_wait": self.challenge_wait if challenge_wait is None else challenge_wait,
+        }
+
+    def _runtime_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **config,
+            "proxy": proxy_for_runtime(config.get("proxy")),
         }
 
     def _ensure_unique_env_name(self, env_name: str | None, worker_id: str) -> None:

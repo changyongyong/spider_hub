@@ -44,7 +44,8 @@ const quickConfig = reactive({
 function addressOf(worker) {
   const proxy = worker.config?.proxy || worker.proxy;
   if (proxy && typeof proxy === "object") {
-    return proxy.enabled ? proxy.server || `${proxy.scheme}://${proxy.host}:${proxy.port}` : "直连";
+    if (proxy.enabled === false) return "直连";
+    return proxy.server || `${proxy.scheme || "http"}://${proxy.host}:${proxy.port}`;
   }
   return proxy && proxy !== "direct" ? proxy : "直连";
 }

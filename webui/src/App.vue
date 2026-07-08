@@ -167,6 +167,7 @@ function handleAuthExpired() {
   <SlaveEnvironmentForm
     v-if="session && (mode === 'create' || mode === 'edit')"
     :nodes="dashboard.slaves.value"
+    :environments="dashboard.workers.value"
     :error="dashboard.error.value"
     :environment="selectedEnvironment"
     :mode="mode"

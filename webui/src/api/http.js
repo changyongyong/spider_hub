@@ -52,10 +52,25 @@ async function readError(response) {
 
   try {
     const payload = JSON.parse(text);
+    if (Array.isArray(payload.detail)) {
+      return payload.detail.map(formatValidationError).join("；");
+    }
     return payload.detail || text;
   } catch {
     return text;
   }
+}
+
+function formatValidationError(error) {
+  const field = Array.isArray(error.loc) ? error.loc[error.loc.length - 1] : "";
+  const labels = {
+    viewport_width: "分辨率宽度",
+    viewport_height: "分辨率高度",
+    proxy: "代理",
+    env_name: "环境名称",
+    node_id: "Slave 节点"
+  };
+  return `${labels[field] || field || "字段"}：${error.msg || "输入不合法"}`;
 }
 
 export function jsonOptions(method, body) {
