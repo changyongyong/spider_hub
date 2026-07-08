@@ -4,7 +4,7 @@ import json
 import os
 import socket
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 import uvicorn
@@ -220,7 +220,7 @@ class SlaveRuntime:
             "base_url": self.public_url,
         }
         headers = {"X-Internal-Token": self.master_token} if self.master_token else None
-        for _ in range(30):
+        while True:
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
                     response = await client.post(
@@ -229,9 +229,11 @@ class SlaveRuntime:
                         headers=headers,
                     )
                     response.raise_for_status()
-                return
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                raise
             except Exception:
-                await asyncio.sleep(1)
+                await asyncio.sleep(5)
 
 
 def create_app(runtime: SlaveRuntime) -> FastAPI:
@@ -243,6 +245,8 @@ def create_app(runtime: SlaveRuntime) -> FastAPI:
             yield
         finally:
             register_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await register_task
             await app.state.runtime.stop()
 
     app = FastAPI(title="Playwright Slave Task", version="1.0.0", lifespan=lifespan)
